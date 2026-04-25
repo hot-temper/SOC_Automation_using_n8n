@@ -1,0 +1,5 @@
+#!/bin/sh
+# Wazuh integration wrapper for custom-n8n
+WPYTHON_BIN="python3"
+SCRIPT_PATH="$(dirname "$0")/custom-n8n.py"
+"$WPYTHON_BIN" "$SCRIPT_PATH" "$1" "$2" "$3"
