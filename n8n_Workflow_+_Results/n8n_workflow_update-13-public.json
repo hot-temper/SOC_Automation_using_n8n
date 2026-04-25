@@ -1,0 +1,1161 @@
+{
+  "name": "update-13",
+  "nodes": [
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"received\", \"pipeline\": \"critical\", \"ts\": \"{{ $now.toISO() }}\" }",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "d2d078ba-685d-4e1c-ac5f-0d14d7453a2f",
+      "name": "C \u2014 ACK Wazuh",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [
+        -1680,
+        1040
+      ],
+      "typeVersion": 1.1
+    },
+    {
+      "parameters": {
+        "jsCode": "const _e=JSON.parse(JSON.stringify($input.item.json._e));const aStr=JSON.stringify(_e.alert||{});\nconst priv=[/^10\\./,/^172\\.(1[6-9]|2\\d|3[01])\\./,/^192\\.168\\./,/^127\\./,/^169\\.254\\./,/^0\\./,/^255\\./];\nconst isPriv=ip=>priv.some(r=>r.test(ip));\nconst trusted=['microsoft.com','windows.com','windowsupdate.com','google.com','googleapis.com','amazonaws.com','cloudflare.com','digicert.com','verisign.com','akamai.com'];\nconst ipRx=/\\b(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\b/g;\nconst domRx=/(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+(?:com|net|org|io|gov|edu|co|ru|cn|xyz|top|club|online|site|tech|cloud|app|dev|ai|me|cc|biz|info|tk|ml|pw)/g;\nconst ips=new Set(),domains=new Set(),urls=new Set(),hashes=new Set();\nif(_e._seeds?.src_ip&&!isPriv(_e._seeds.src_ip))ips.add(_e._seeds.src_ip);\n(aStr.match(ipRx)||[]).forEach(ip=>{if(!isPriv(ip))ips.add(ip);});\nif(_e._seeds?.domain)domains.add(_e._seeds.domain.toLowerCase());\n(aStr.match(domRx)||[]).forEach(d=>domains.add(d.toLowerCase()));\nif(_e._seeds?.url)urls.add(_e._seeds.url);\n((_e.alert?.full_log||'').match(/https?:\\/\\/[^\\s'\"<>\\]\\[)]+/g)||[]).forEach(u=>urls.add(u));\nif(_e._seeds?.hash)hashes.add(_e._seeds.hash.toLowerCase());\n(aStr.match(/\\b[a-fA-F0-9]{64}\\b/g)||[]).forEach(h=>hashes.add(h.toLowerCase()));\n_e.iocs={ips:[...ips].slice(0,5),domains:[...domains].filter(d=>!trusted.some(t=>d.endsWith(t))).slice(0,5),urls:[...urls].slice(0,5),hashes:[...hashes].slice(0,5)};\nif(!_e.alert_id)throw new Error('INTEGRITY: alert_id missing after IOC extraction');\nreturn [{json:{_e}}];\n"
+      },
+      "id": "e8631468-0929-41eb-939f-cfc8a23912c6",
+      "name": "C \u2014 Extract IOCs",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -1664,
+        1632
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "url": "=https://api.abuseipdb.com/api/v2/check?ipAddress={{ $('C \u2014 Extract IOCs').first().json._e.iocs.ips[0] || '192.0.2.1' }}&maxAgeInDays=90&verbose=true",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 8000
+        }
+      },
+      "id": "f9386712-483f-4ff8-8301-b7c60b1f1b89",
+      "name": "C \u2014 TI AbuseIPDB",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -1408,
+        832
+      ],
+      "typeVersion": 4.2,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const r=$input.item.json;\nreturn [{json:{engine:'AbuseIPDB',ok:!r.error&&!r.statusCode,rate_limited:r.statusCode===429,data:r}}];\n"
+      },
+      "id": "031fcaa9-2ddd-4ea8-a704-21fd50136961",
+      "name": "C \u2014 Label AbuseIPDB",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -1232,
+        832
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "url": "=https://www.virustotal.com/api/v3/ip_addresses/{{ $('C \u2014 Extract IOCs').first().json._e.iocs.ips[0] || '192.0.2.1' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "virusTotalApi",
+        "options": {
+          "timeout": 8000
+        }
+      },
+      "id": "f613bae9-b787-49b6-8f65-0d30641ac80e",
+      "name": "C \u2014 TI VT IP",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -1408,
+        1024
+      ],
+      "typeVersion": 4.2,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const r=$input.item.json;\nreturn [{json:{engine:'VT_IP',ok:!r.error&&r.data!==undefined,rate_limited:r.statusCode===429,data:r}}];\n"
+      },
+      "id": "67021287-e3bf-46e4-a6d5-4fb1d3cad48a",
+      "name": "C \u2014 Label VT IP",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -1248,
+        1024
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "url": "=https://www.virustotal.com/api/v3/files/{{ $('C \u2014 Extract IOCs').first().json._e.iocs.hashes[0] || 'aabbccdd00000000000000000000000000000000000000000000000000000000' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "virusTotalApi",
+        "options": {
+          "timeout": 8000
+        }
+      },
+      "id": "54efaf1e-8f86-489b-a8d6-31c6cd5391bf",
+      "name": "C \u2014 TI VT Hash",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -1424,
+        1408
+      ],
+      "typeVersion": 4.2,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const r=$input.item.json;\nreturn [{json:{engine:'VT_Hash',ok:!r.error&&r.data!==undefined,rate_limited:r.statusCode===429,data:r}}];\n"
+      },
+      "id": "81d57a00-6b19-4079-8201-8559a571353c",
+      "name": "C \u2014 Label VT Hash",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -1248,
+        1408
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "numberInputs": 5
+      },
+      "id": "0e7dd92a-82bc-46e3-8c74-d9340c6c7a8d",
+      "name": "C \u2014 Merge TI Results",
+      "type": "n8n-nodes-base.merge",
+      "position": [
+        -1024,
+        992
+      ],
+      "typeVersion": 3.2
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot<YOUR_BOT_TOKEN>/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ \n  chat_id: \"<YOUR_CHAT_ID>\", \n  text: $json.tgMessage\n    .replace(/<[^>]*>/g, '')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&amp;/g, '&')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;'),\n  parse_mode: \"HTML\" \n}) }}",
+        "options": {
+          "timeout": 8000
+        }
+      },
+      "id": "0ef8d9f3-7622-45bb-aaa7-94fce0707860",
+      "name": "C \u2014 Send Telegram Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        304,
+        1024
+      ],
+      "typeVersion": 4.2,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer <YOUR_GROQ_API_KEY>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama-3.3-70b-versatile\",\n  \"temperature\": 0,\n  \"max_tokens\": 2000,\n  \"response_format\": {\"type\": \"json_object\"},\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a SOC Level 2 AI Security Analyst with 10+ years of experience in threat hunting, incident response, and malware analysis. You operate inside an automated SOC workflow and must produce deterministic, structured, and evidence-based outputs.\\n\\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\\nSTRICT OPERATING RULES\\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\\n\\nRULE 1 \u2014 OUTPUT FORMAT (CRITICAL)\\nReturn ONLY valid JSON. No markdown. No code blocks. No text outside JSON.\\nAll schema fields are mandatory. Use null or [] if value cannot be determined.\\n\\nRULE 2 \u2014 DATA BOUNDARIES\\nOnly use data explicitly provided in the user message. Do not assume, infer, or fabricate any field.\\n\\nRULE 3 \u2014 VERDICT DISCIPLINE\\nChoose exactly one:\\n  TRUE_POSITIVE       \u2192 confirmed malicious activity with strong evidence\\n  FALSE_POSITIVE      \u2192 confirmed benign, fully explainable by context\\n  BENIGN              \u2192 normal expected system behavior\\n  NEEDS_INVESTIGATION \u2192 insufficient or conflicting evidence\\n\\nRULE 4 \u2014 CONFIDENCE SCORING\\n  HIGH   \u2192 3+ independent strong indicators aligned\\n  MEDIUM \u2192 1 strong or 2+ moderate indicators\\n  LOW    \u2192 weak, single, or conflicting evidence\\nCRITICAL: If verdict = NEEDS_INVESTIGATION \u2192 confidence MUST be LOW or MEDIUM, never HIGH.\\n\\nRULE 5 \u2014 FALSE POSITIVE VALIDATION\\nBefore escalating, always check:\\n  \u2192 Is the IP a known CDN, cloud provider, or trusted service?\\n  \u2192 Is the binary a known legitimate Windows/Linux system process?\\n  \u2192 Is the path a standard OS path (System32, /usr/bin, /etc)?\\n  \u2192 Is this a known noisy rule (AV scan, scheduled task, backup)?\\n  \u2192 Could this be automated or scheduled activity?\\nIf yes to any \u2192 classify as FALSE_POSITIVE or BENIGN with explanation.\\n\\nRULE 6 \u2014 ZERO-DAY AND UNKNOWN THREATS\\nIf TI verdict is CLEAN but behavior is suspicious:\\n  \u2192 Do NOT classify as benign based on TI alone\\n  \u2192 Deep-analyze: process name, cmdline args, parent-child chain\\n  \u2192 Look for: LOTL techniques, unusual outbound connections, privilege escalation\\n  \u2192 Escalate to NEEDS_INVESTIGATION with zero_day_indicators populated\\n\\nRULE 7 \u2014 MITRE ATT&CK MAPPING (STRICT ID FORMAT)\\nUse ONLY official ATT&CK IDs. No plain text names allowed.\\n  tactics       \u2192 TA00xx format only   (e.g. TA0006 not 'Credential Access')\\n  techniques    \u2192 T1xxx  format only   (e.g. T1110 not 'Brute Force')\\n  sub_techniques\u2192 T1xxx.00x format     (e.g. T1110.001 for SSH brute force)\\nMAP sub_techniques whenever a specific sub-technique applies.\\nWRONG: tactics: ['Credential Access']   RIGHT: tactics: ['TA0006']\\nWRONG: techniques: ['Brute Force']      RIGHT: techniques: ['T1110']\\nReturn empty arrays ONLY if zero evidence supports any mapping.\\n\\nRULE 8 \u2014 RISK SCORE (0\u2013100, NO EXCEPTIONS)\\nAdd scores from each applicable category:\\n  TI VERDICT:          malicious=+40, suspicious=+25, low_risk=+15, clean=+5\\n  BEHAVIOR:            strong malicious behavior=+30, moderate anomaly=+20, weak anomaly=+10\\n  ASSET CRITICALITY:   critical asset=+20, standard asset=+10, unknown=+5\\n  TECHNIQUE:           advanced/LOTL=+10, basic=+5\\nHard cap at 100. Map to severity:\\n  0\u201320   \u2192 INFORMATIONAL\\n  21\u201340  \u2192 LOW\\n  41\u201360  \u2192 MEDIUM\\n  61\u201380  \u2192 HIGH\\n  81\u2013100 \u2192 CRITICAL\\nThe risk_score MUST mathematically match incident_severity band.\\n\\nRULE 9 \u2014 RESPONSE ACTIONS (MANDATORY PRIORITY ORDER)\\nEvery recommended action MUST follow format: 'Px \u2014 specific action \u2014 specific reason'\\n  P0 \u2192 Immediate containment (block, isolate, disable) \u2014 cite exact IOC or behavior\\n  P1 \u2192 Short-term investigation (log review, forensics) \u2014 cite what to look for\\n  P2 \u2192 Hardening (patch, config change, rule update) \u2014 cite exact system/config\\n  P3 \u2192 Long-term detection improvement \u2014 cite specific detection gap\\nNever use generic advice. Every action must reference THIS alert's data.\\n\\nRULE 10 \u2014 ANALYST BRIEFING (analysis field)\\nWrite exactly 4 sentences:\\n  Sentence 1: What happened (event + source + target)\\n  Sentence 2: Why it matters (asset criticality + potential impact)\\n  Sentence 3: Evidence chain (TI findings + behavioral indicators + MITRE)\\n  Sentence 4: Immediate recommended action (specific, not generic)\\nNo vague language. No 'may have' or 'could be'. Be direct.\\n\\nRULE 11 \u2014 CORRELATION ENGINE\\nAlign multiple data sources before verdict:\\n  \u2192 TI score + AbuseIPDB score + VT detections = combined IP risk\\n  \u2192 Syscheck event + modified_by + process = file tampering chain\\n  \u2192 Cmdline + rule_groups + MITRE = technique confirmation\\n  \u2192 Vulnerability CVE + attack vector + syscheck = exploitation chain\\n  \u2192 OTX pulse_count + malware_families + adversary = threat campaign link\\n  \u2192 Hybrid Analysis verdict + multiscan_result + crowdstrike_ml = hash confirmation\\nHigher correlation = higher confidence. Document correlation in analyst_notes.\\n\\nRULE 12 \u2014 PROHIBITED (AUTOMATIC FAILURE)\\n  \u2192 Fabricating IOCs not present in the provided data\\n  \u2192 Inventing threat actor names or campaigns\\n  \u2192 Guessing values for null/missing fields\\n  \u2192 Recommending reboot without explicit justification\\n  \u2192 Writing 'monitor X' without specifying WHAT metric and HOW to alert\\n  \u2192 Using plain text in MITRE fields instead of ATT&CK IDs\\n\\nRULE 13 \u2014 AbuseIPDB SCORING\\n  \u2192 score > 80  \u2192 HIGH confidence malicious IP \u2192 add to malicious_ips\\n  \u2192 score 50\u201380 \u2192 MEDIUM confidence \u2192 add to malicious_ips with note\\n  \u2192 score 20\u201350 \u2192 suspicious \u2192 note in analyst_notes\\n  \u2192 score < 20  \u2192 likely clean, check other indicators\\n  \u2192 is_tor=true \u2192 always elevate risk regardless of score\\n  \u2192 hostnames containing 'scanme' or 'test' \u2192 possible research IP, check other TI\\n\\nRULE 14 \u2014 VIRUSTOTAL SCORING\\n  \u2192 malicious >= 10 engines \u2192 confirmed malicious\\n  \u2192 malicious 3\u20139 engines   \u2192 suspicious, correlate with other TI\\n  \u2192 malicious 1\u20132 engines   \u2192 low confidence, possible false positive\\n  \u2192 malicious = 0           \u2192 clean per VT, check other engines\\n  Applies to: VT IP, VT Domain, VT Hash equally.\\n\\nRULE 15 \u2014 OTX INTELLIGENCE CONTEXT\\n  \u2192 pulse_count = 0  \u2192 no community reports (not proof of clean)\\n  \u2192 pulse_count 1\u20135  \u2192 low community flagging, correlate with other TI\\n  \u2192 pulse_count > 5  \u2192 well-known malicious indicator\\n  \u2192 malware_families present \u2192 add to attack_type if not already set\\n  \u2192 adversary present \u2192 add to threat_actor_profile\\n  \u2192 OTX scans URL or Domain depending on available IOC \u2014 check type field\\n\\nRULE 16 \u2014 HYBRID ANALYSIS CONTEXT\\n  \u2192 verdict=malicious + crowdstrike_ml=malicious \u2192 HIGH confidence hash\\n  \u2192 multiscan_result > 80% \u2192 strong confirmation across multiple engines\\n  \u2192 metadefender field \u2192 additional engine confirmation\\n  \u2192 hash_match=false \u2192 returned hash differs from queried \u2014 note in analyst_notes\\n  \u2192 whitelisted=true \u2192 known good file \u2014 classify as FALSE_POSITIVE if no other indicators\\n\\nRULE 17 \u2014 ENGINE HEALTH AWARENESS\\n  \u2192 engines_error > 0 \u2192 some TI sources unavailable, confidence may be reduced\\n  \u2192 engines_ok < 3    \u2192 limited TI coverage, escalate confidence to MEDIUM max\\n  \u2192 If VT_Hash=error AND Hybrid=ok \u2192 rely on Hybrid for hash verdict\\n  \u2192 If all hash engines error \u2192 do not classify hash as clean \u2014 use NEEDS_INVESTIGATION\\n  \u2192 Always note engine errors in analyst_notes\\n\\nRULE 17\u2014 BEHAVIORAL (use when IOC/TI absent)\\n- 0x1FFFFF on sensitive target=+35 | read-only access=+15 | lsass/winlogon/sam target=+15\\n- LOLBIN source=+20 | unsigned/abnormal parent=+15 | spawned from Office/browser=+10\\n- rule_level 13-15=+20 | 10-12=+12 | <10=+5\\n- EID10 protected process=+15 | EID1 suspicious cmdline=+10 | EID3 unexpected net=+10 | EID11/13 sensitive path=+10\\n- Asset: Critical=+20 | Standard=+10\\n\\n## BEHAVIORAL EVIDENCE PRIORITY\\nParse sysmon_process as PRIMARY when populated:\\nfull_log(SourceImage/TargetImage/GrantedAccess) | source_image(LOLBIN?) | target_image(lsass/sam/winlogon?) | granted_access(hex\u2192rights) | call_trace(unsigned DLL?) | rule_name(technique_id) | sysmon_event_id(event class)\\nNEVER leave fields empty when sysmon data exists.\\nIf IOC/TI null \u2192 set ioc_verdict: \\\"No external IOC \u2014 verdict from behavioral evidence.\\\" then reason from sysmon+rule+full_log\\n\\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\\nOUTPUT SCHEMA \u2014 ALL FIELDS MANDATORY\\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\\n{\\\"alert_summary\\\":\\\"One precise sentence: what happened + source + target\\\",\\\"attack_type\\\":\\\"Exact attack name (e.g. SSH Brute Force, Ransomware, C2 Beacon) or null\\\",\\\"alert_verdict\\\":\\\"TRUE_POSITIVE|FALSE_POSITIVE|BENIGN|NEEDS_INVESTIGATION\\\",\\\"confidence\\\":\\\"HIGH|MEDIUM|LOW\\\",\\\"incident_severity\\\":\\\"CRITICAL|HIGH|MEDIUM|LOW|INFORMATIONAL\\\",\\\"risk_score\\\":0,\\\"mitre_attack\\\":{\\\"tactics\\\":[\\\"TA00xx\\\"],\\\"techniques\\\":[\\\"T1xxx\\\"],\\\"sub_techniques\\\":[\\\"T1xxx.00x\\\"]},\\\"ioc_analysis\\\":{\\\"malicious_ips\\\":[],\\\"malicious_domains\\\":[],\\\"malicious_hashes\\\":[],\\\"suspicious_urls\\\":[],\\\"ioc_verdict\\\":\\\"clean|suspicious|malicious\\\"},\\\"false_positive_indicators\\\":[],\\\"analysis\\\":\\\"4 sentences: what+source+target | asset criticality+impact | evidence chain | immediate action\\\",\\\"investigation_timeline\\\":[\\\"Step 1 \u2014 ...\\\",\\\"Step 2 \u2014 ...\\\",\\\"Step 3 \u2014 ...\\\"],\\\"affected_assets\\\":[],\\\"recommended_actions\\\":[\\\"P0 \u2014 specific action \u2014 specific reason citing alert data\\\",\\\"P1 \u2014 specific action \u2014 specific reason\\\",\\\"P2 \u2014 specific action \u2014 specific reason\\\",\\\"P3 \u2014 specific action \u2014 specific reason\\\"],\\\"detection_improvements\\\":[],\\\"threat_actor_profile\\\":null,\\\"zero_day_indicators\\\":[],\\\"analyst_notes\\\":\\\"Correlation summary: TI sources used + engine errors noted + key evidence chain\\\"}\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify(\n        \"ALERT ID: \" + $json._e.alert_id +\n        \"\\nPIPELINE : \" + $json._e.pipeline +\n        \"\\nRECEIVED : \" + $json._e.received_at +\n\n        \"\\n\\n\u2550\u2550\u2550\u2550 ALERT \u2550\u2550\u2550\u2550\" +\n        \"\\nRule ID    : \" + $json._e.alert.rule_id +\n        \"\\nRule Desc  : \" + $json._e.alert.rule_desc +\n        \"\\nLevel      : \" + $json._e.alert.rule_level +\n        \"\\nTimestamp  : \" + $json._e.alert.timestamp +\n        \"\\nGroups     : \" + JSON.stringify($json._e.alert.rule_groups) +\n        \"\\nFired      : \" + $json._e.alert.fired_times + \" times\" +\n        \"\\nFull Log   : \" + ($json._e.alert.full_log || '').slice(0, 600) +\n        \"\\nCmdline    : \" + ($json._e.sysmon_process?.command_line || 'N/A') +\n\n        \"\\n\\n\u2550\u2550\u2550\u2550 HOST \u2550\u2550\u2550\u2550\" +\n        \"\\nAgent      : \" + $json._e.host.agent_name +\n        \"\\nAgent ID   : \" + $json._e.host.agent_id +\n        \"\\nIP         : \" + $json._e.host.agent_ip +\n        \"\\nLocation   : \" + $json._e.host.location +\n        \"\\nOS         : \" + ($json._e.host.os || 'Unknown') +\n        \"\\nEnvironment: \" + ($json._e.host.labels.environment || 'unknown') +\n        \"\\nCriticality: \" + ($json._e.host.labels.criticality || 'unknown') +\n        \"\\nGeo        : \" + ($json._e.host.geo.city || 'Unknown') + \", \" + ($json._e.host.geo.country || 'Unknown') +\n\n        \"\\n\\n\u2550\u2550\u2550\u2550 NETWORK \u2550\u2550\u2550\u2550\" +\n        \"\\nSrc IP     : \" + ($json._e.network.src_ip || 'N/A') +\n        \"\\nSrc Port   : \" + ($json._e.network.src_port || 'N/A') +\n        \"\\nDst User   : \" + ($json._e.network.dst_user || 'N/A') +\n        \"\\nSrc Country: \" + ($json._e.network.src_country || 'N/A') + \", \" + ($json._e.network.src_city || 'N/A') +\n        \"\\nProtocol   : \" + ($json._e.network.protocol || 'unknown') +\n\n        \"\\n\\n\u2550\u2550\u2550\u2550 IOCs EXTRACTED \u2550\u2550\u2550\u2550\" +\n        \"\\nIPs        : \" + JSON.stringify($json._e.iocs.ips) +\n        \"\\nDomains    : \" + JSON.stringify($json._e.iocs.domains) +\n        \"\\nHashes     : \" + JSON.stringify($json._e.iocs.hashes) +\n        \"\\nURLs       : \" + JSON.stringify($json._e.iocs.urls) +\n\n        \"\\n\\n\u2550\u2550\u2550\u2550 TI SUMMARY \u2550\u2550\u2550\u2550\" +\n        \"\\nVerdict    : \" + $json._e.threat_intel.summary.verdict +\n        \"\\nTI Score   : \" + $json._e.threat_intel.summary.score +\n        \"\\nFlagged    : \" + JSON.stringify($json._e.threat_intel.summary.flagged) +\n        \"\\nEngines OK : \" + ($json._e.threat_intel.summary.engines_ok || 0) +\n        \"\\nEngines Err: \" + ($json._e.threat_intel.summary.engines_error || 0) +\n        \"\\nEngines Skip: \" + ($json._e.threat_intel.summary.engines_skipped || 0) +\n        \"\\nEngine Status: \" + JSON.stringify($json._e.threat_intel.engines) +\n\n        \"\\n\\n\u2550\u2550\u2550\u2550 IP REPUTATION \u2550\u2550\u2550\u2550\" +\n        \"\\nAbuseIPDB  : \" + JSON.stringify($json._e.threat_intel.ip_rep.abuseipdb || {}) +\n        \"\\nVT IP      : \" + JSON.stringify($json._e.threat_intel.ip_rep.virustotal || {}) +\n\n        \"\\n\\n\u2550\u2550\u2550\u2550 DOMAIN REPUTATION \u2550\u2550\u2550\u2550\" +\n        \"\\nVT Domain  : \" + JSON.stringify($json._e.threat_intel.domain_rep.virustotal || {}) +\n        \"\\nOTX Domain : \" + JSON.stringify($json._e.threat_intel.domain_rep.otx || {}) +\n\n        \"\\n\\n\u2550\u2550\u2550\u2550 URL REPUTATION \u2550\u2550\u2550\u2550\" +\n        \"\\nOTX URL    : \" + JSON.stringify($json._e.threat_intel.url_rep.otx || {}) +\n\n        \"\\n\\n\u2550\u2550\u2550\u2550 HASH REPUTATION \u2550\u2550\u2550\u2550\" +\n        \"\\nVT Hash    : \" + JSON.stringify($json._e.threat_intel.hash_rep.virustotal || {}) +\n        \"\\nHybrid     : \" + JSON.stringify($json._e.threat_intel.hash_rep.hybrid || {}) +\n\n        \"\\n\\n\u2550\u2550\u2550\u2550 SYSMON PROCESS \u2550\u2550\u2550\u2550\" +\n        \"\\nSource Img : \" + ($json._e.sysmon_process?.source_image || 'N/A') +\n        \"\\nTarget Img : \" + ($json._e.sysmon_process?.target_image || 'N/A') +\n        \"\\nParent Img : \" + ($json._e.sysmon_process?.parent_image || 'N/A') +\n        \"\\nCmd Line   : \" + ($json._e.sysmon_process?.command_line || 'N/A') +\n        \"\\nParent Cmd : \" + ($json._e.sysmon_process?.parent_cmdline || 'N/A') +\n        \"\\nGrantedAccs: \" + ($json._e.sysmon_process?.granted_access || 'N/A') +\n        \"\\nCall Trace : \" + ($json._e.sysmon_process?.call_trace || 'N/A') +\n        \"\\nIntegrity  : \" + ($json._e.sysmon_process?.integrity_level || 'N/A') +\n        \"\\nSHA256     : \" + ($json._e.sysmon_process?.hashes?.sha256 || 'N/A') +\n        \"\\nMD5        : \" + ($json._e.sysmon_process?.hashes?.md5 || 'N/A') +\n        \"\\nRule Name  : \" + ($json._e.sysmon_process?.rule_name || 'N/A') +\n\n        \"\\n\\n\u2550\u2550\u2550\u2550 SYSMON NETWORK \u2550\u2550\u2550\u2550\" +\n        \"\\nDst IP     : \" + ($json._e.sysmon_network?.dst_ip || 'N/A') +\n        \"\\nDst Port   : \" + ($json._e.sysmon_network?.dst_port || 'N/A') +\n        \"\\nDst Host   : \" + ($json._e.sysmon_network?.dst_hostname || 'N/A') +\n        \"\\nSrc IP     : \" + ($json._e.sysmon_network?.src_ip || 'N/A') +\n        \"\\nProtocol   : \" + ($json._e.sysmon_network?.protocol || 'N/A') +\n        \"\\nProcess    : \" + ($json._e.sysmon_network?.process_image || 'N/A') +\n\n        \"\\n\\n\u2550\u2550\u2550\u2550 SURICATA \u2550\u2550\u2550\u2550\" +\n        \"\\nSignature  : \" + ($json._e.suricata?.signature || 'N/A') +\n        \"\\nAction     : \" + ($json._e.suricata?.action || 'N/A') +\n        \"\\nCategory   : \" + ($json._e.suricata?.category || 'N/A') +\n        \"\\nSeverity   : \" + ($json._e.suricata?.severity || 'N/A') +\n        \"\\nSrc IP     : \" + ($json._e.suricata?.src_ip || 'N/A') +\n        \"\\nDst IP     : \" + ($json._e.suricata?.dst_ip || 'N/A') +\n\n        \"\\n\\n\u2550\u2550\u2550\u2550 SYSCHECK \u2550\u2550\u2550\u2550\" +\n        \"\\nPath       : \" + ($json._e.syscheck?.path || 'N/A') +\n        \"\\nEvent      : \" + ($json._e.syscheck?.event || 'N/A') +\n        \"\\nSHA256     : \" + ($json._e.syscheck?.sha256_after || 'N/A') +\n        \"\\nModified By: \" + ($json._e.syscheck?.modified_by || 'N/A') +\n        \"\\nProcess    : \" + ($json._e.syscheck?.process || 'N/A') +\n\n        \"\\n\\n\u2550\u2550\u2550\u2550 VULNERABILITY \u2550\u2550\u2550\u2550\" +\n        \"\\nCVE        : \" + ($json._e.vulnerability?.cve || 'N/A') +\n        \"\\nSeverity   : \" + ($json._e.vulnerability?.severity || 'N/A') +\n        \"\\nTitle      : \" + ($json._e.vulnerability?.title || 'N/A') +\n        \"\\nPackage    : \" + ($json._e.vulnerability?.pkg || 'N/A') +\n        \"\\nVersion    : \" + ($json._e.vulnerability?.version || 'N/A') +\n\n        \"\\n\\n\u2550\u2550\u2550\u2550 MITRE (Wazuh) \u2550\u2550\u2550\u2550\" +\n        \"\\nIDs        : \" + JSON.stringify($json._e.alert.mitre.id || []) +\n        \"\\nTactics    : \" + JSON.stringify($json._e.alert.mitre.tactic || []) +\n        \"\\nTechniques : \" + JSON.stringify($json._e.alert.mitre.technique || []) +\n\n        \"\\n\\n\u2550\u2550\u2550\u2550 COMPLIANCE \u2550\u2550\u2550\u2550\" +\n        \"\\nPCI DSS    : \" + JSON.stringify($json._e.alert.compliance.pci_dss || []) +\n        \"\\nGDPR       : \" + JSON.stringify($json._e.alert.compliance.gdpr || []) +\n        \"\\nHIPAA      : \" + JSON.stringify($json._e.alert.compliance.hipaa || []) +\n        \"\\nNIST 800-53: \" + JSON.stringify($json._e.alert.compliance.nist_800_53 || [])\n      ) }}\n    }\n  ]\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "1763f9f2-812d-4d20-8f0b-5f0674ba1bc1",
+      "name": "C \u2014 AI Investigation Groq v2",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -656,
+        832
+      ],
+      "typeVersion": 4.2,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// SOC ALERT SUMMARIZER v5\n// Changes from v4:\n//   \u2192 Added C \u2014 Alert Dedup Gate burst/dedup intel extraction\n//   \u2192 Added DEDUP/BURST section to email report\n//   \u2192 Added burst banner line to Telegram message\n//   \u2192 Added unique source IPs list to Telegram on burst\n//   \u2192 Telegram character budget kept: +200\u2013300 chars max on burst\n//   \u2192 Zero changes to any existing v4 logic or output structure\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst _e    = $input.item.json._e;\nconst AUDIT = $input.item.json.AUDIT;\nconst ai    = _e.ai_analysis || {};\nconst ti    = _e.threat_intel || {};\nconst host  = _e.host || {};\nconst alert = _e.alert || {};\nconst iocs  = _e.iocs || {};\nconst net   = _e.network || {};\nconst tl = AUDIT.timeline || _e.timeline || {};\n\n// \u2500\u2500 Emoji Maps \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst sevEmoji  = { critical:'\ud83d\udea8', high:'\ud83d\udd34', medium:'\ud83d\udfe1', low:'\ud83d\udd35', informational:'\u26aa' };\nconst verdEmoji = { TRUE_POSITIVE:'\u2705 TRUE POSITIVE', FALSE_POSITIVE:'\u274c FALSE POSITIVE', BENIGN:'\ud83d\udfe2 BENIGN', NEEDS_INVESTIGATION:'\u26a0\ufe0f NEEDS INVESTIGATION' };\nconst confEmoji = { HIGH:'\ud83d\udd12 HIGH', MEDIUM:'\ud83d\udd36 MEDIUM', LOW:'\ud83d\udd13 LOW' };\nconst tiEmoji   = { malicious:'\ud83d\udd34 MALICIOUS', suspicious:'\ud83d\udfe0 SUSPICIOUS', low_risk:'\ud83d\udfe1 LOW RISK', clean:'\ud83d\udfe2 CLEAN', unknown:'\u26aa UNKNOWN' };\n\nconst se = sevEmoji[_e.severity_tier]   || '\u26aa';\nconst ve = verdEmoji[ai.alert_verdict]  || ai.alert_verdict || 'N/A';\nconst ce = confEmoji[ai.confidence]     || ai.confidence    || 'N/A';\nconst te = tiEmoji[ti.summary?.verdict] || ti.summary?.verdict || 'N/A';\n\n// \u2500\u2500 Helpers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst safe  = (v, fallback='N/A') => (v !== undefined && v !== null && v !== '') ? v : fallback;\nconst arr   = (v) => Array.isArray(v) && v.length > 0 ? v : null;\nconst trunc = (s, n) => s && s.length > n ? s.slice(0, n) + '...' : (s || 'N/A');\n\n// \u2500\u2500 Success Detection \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst successDetected =\n  ai.analysis?.toLowerCase().includes('successful') ||\n  alert.full_log?.toLowerCase().includes('accepted password');\n\n// \u2500\u2500 Duration Calc \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst totalSec = tl.total_ms ? Math.round(tl.total_ms / 1000) : null;\nconst duration = totalSec ? `${Math.floor(totalSec/60)}m ${totalSec%60}s` : 'N/A';\n\n// \u2500\u2500 Engine Icon Map \u2014 updated for Aggregator v3 statuses \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst engineIcon = (v) => {\n  if (!v) return '\u2796';\n  if (v === 'ok')                         return '\u2705';\n  if (v.startsWith('ok('))               return '\u2705';\n  if (v === 'ok_no_verdict')             return '\u2796';\n  if (v === 'ok_not_found')             return '\ud83d\udd0d';\n  if (v === 'ok_found')                 return '\ud83d\udea8';\n  if (v === 'error')                    return '\u274c';\n  if (v.includes('failed'))            return '\u274c';\n  if (v === 'rate_limited_429')        return '\u26a0\ufe0f';\n  if (v.startsWith('skipped'))         return '\u23ed\ufe0f';\n  if (v === 'illegal_hash_format')     return '\u26a0\ufe0f';\n  if (v === 'no_response')             return '\ud83d\udd18';\n  return '\u2796';\n};\n\n// \u2500\u2500 TI Engine Summary \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst engines = ti.engines || {};\nconst engineLines = Object.entries(engines).map(([k, v]) => {\n  return `    ${engineIcon(v)} ${k}: ${v}`;\n}).join('\\n');\n\n// \u2500\u2500 Engine Health Stats \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst engOk      = safe(ti.summary?.engines_ok, 0);\nconst engErr     = safe(ti.summary?.engines_error, 0);\nconst engSkipped = safe(ti.summary?.engines_skipped, 0);\nconst engTotal   = safe(ti.summary?.engines_total, 0);\nconst engHealth  = `\u2705 OK: ${engOk} | \u274c Error: ${engErr} | \u23ed\ufe0f Skipped: ${engSkipped} | Total: ${engTotal}`;\nconst tgEngHealth = `Engines: \u2705${engOk} \u274c${engErr} \u23ed\ufe0f${engSkipped} / ${engTotal}`;\n\n// \u2500\u2500 IOC Lines \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst iocLines = [\n  arr(ai.ioc_analysis?.malicious_ips)     ? `    \ud83d\udd34 Malicious IPs    : ${ai.ioc_analysis.malicious_ips.join(', ')}` : null,\n  arr(ai.ioc_analysis?.malicious_domains) ? `    \ud83d\udd34 Malicious Domains: ${ai.ioc_analysis.malicious_domains.join(', ')}` : null,\n  arr(ai.ioc_analysis?.malicious_hashes)  ? `    \ud83d\udd34 Malicious Hashes : ${ai.ioc_analysis.malicious_hashes.join(', ')}` : null,\n  arr(ai.ioc_analysis?.suspicious_urls)   ? `    \ud83d\udfe0 Suspicious URLs  : ${ai.ioc_analysis.suspicious_urls.join(', ')}` : null,\n  `    \ud83e\uddfe IOC Verdict       : ${safe(ai.ioc_analysis?.ioc_verdict).toUpperCase()}`\n].filter(Boolean).join('\\n');\n\n// \u2500\u2500 TI Reputation Detail \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst repLines = [];\n\nif (ti.ip_rep?.abuseipdb) {\n  const a = ti.ip_rep.abuseipdb;\n  repLines.push(`    AbuseIPDB  : Score=${safe(a.score)}% | ISP=${safe(a.isp)} | Country=${safe(a.country)} | Reports=${safe(a.reports)} | TOR=${safe(a.is_tor)}`);\n  if (a.hostnames?.length > 0) repLines.push(`               Hostnames: ${a.hostnames.join(', ')}`);\n  if (a.note) repLines.push(`               \u26a0\ufe0f Note: ${a.note}`);\n}\nif (ti.ip_rep?.virustotal) {\n  const v = ti.ip_rep.virustotal;\n  repLines.push(`    VT IP      : Malicious=${safe(v.malicious)} | Suspicious=${safe(v.suspicious)} | ASN=${safe(v.asn_owner)} | Country=${safe(v.country)}`);\n}\nif (ti.domain_rep?.virustotal) {\n  const v = ti.domain_rep.virustotal;\n  repLines.push(`    VT Domain  : Malicious=${safe(v.malicious)} | Suspicious=${safe(v.suspicious)} | Domain=${safe(v.domain)}`);\n}\nif (ti.domain_rep?.otx) {\n  const o = ti.domain_rep.otx;\n  repLines.push(`    OTX Domain : Pulses=${safe(o.pulse_count)} | Indicator=${safe(o.indicator)} | Families=${(o.malware_families||[]).join(',')||'None'}`);\n  if (arr(o.pulses)) repLines.push(`               Campaigns: ${o.pulses.map(p=>p.name).slice(0,3).join(' | ')}`);\n}\nif (ti.url_rep?.otx) {\n  const o = ti.url_rep.otx;\n  repLines.push(`    OTX URL    : Pulses=${safe(o.pulse_count)} | Type=${safe(o.type)} | Indicator=${trunc(safe(o.indicator),60)}`);\n  if (arr(o.pulses)) repLines.push(`               Campaigns: ${o.pulses.map(p=>p.name).slice(0,3).join(' | ')}`);\n  if (arr(o.malware_families)) repLines.push(`               Families: ${o.malware_families.join(', ')}`);\n}\nif (ti.hash_rep?.virustotal) {\n  const v = ti.hash_rep.virustotal;\n  repLines.push(`    VT Hash    : Malicious=${safe(v.malicious)} | Suspicious=${safe(v.suspicious)} | Name=${safe(v.name)} | Type=${safe(v.type)}`);\n}\nif (ti.hash_rep?.hybrid) {\n  const h = ti.hash_rep.hybrid;\n  repLines.push(`    Hybrid     : Verdict=${safe(h.verdict)} | Multiscan=${safe(h.multiscan_result)}% | CrowdStrike=${safe(h.crowdstrike_ml)} | Family=${safe(h.family)}`);\n  if (h.metadefender) repLines.push(`               MetaDefender: ${h.metadefender}`);\n  if (h.hash_note)    repLines.push(`               \u26a0\ufe0f Hash Mismatch: ${h.hash_note}`);\n}\n\n// \u2500\u2500 Actions \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst actionLines   = (arr(ai.recommended_actions)||[]).map(a=>`    ${a}`).join('\\n');\nconst timelineLines = (arr(ai.investigation_timeline)||[]).map(s=>`    ${s}`).join('\\n');\nconst improvLines   = arr(ai.detection_improvements) ? ai.detection_improvements.map(d=>`    \u2022 ${d}`).join('\\n') : '    \u2022 None provided';\n\n// \u2500\u2500 MITRE \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst mitre    = ai.mitre_attack || {};\nconst mitreStr = [\n  arr(mitre.tactics)        ? `Tactics    : ${mitre.tactics.join(', ')}` : null,\n  arr(mitre.techniques)     ? `Techniques : ${mitre.techniques.join(', ')}` : null,\n  arr(mitre.sub_techniques) ? `Sub-Tech   : ${mitre.sub_techniques.join(', ')}` : null,\n].filter(Boolean).map(l=>`    ${l}`).join('\\n');\n\n// \u2500\u2500 Compliance \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst comp = alert.compliance || {};\nconst compLines = Object.entries(comp)\n  .filter(([, v]) => Array.isArray(v) && v.length > 0)\n  .map(([k, v]) => `    ${k.toUpperCase()}: ${v.join(', ')}`)\n  .join('\\n');\nconst tgComp = Object.entries(comp)\n  .filter(([, v]) => Array.isArray(v) && v.length > 0)\n  .map(([k, v]) => `${k.toUpperCase()}:${v.join(',')}`)\n  .join(' | ') || 'N/A';\n\n// \u2500\u2500 Vulnerability \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst vuln    = alert.vulnerability || {};\nconst vulnStr = vuln.cve ? `${vuln.cve} | ${safe(vuln.severity)} | ${safe(vuln.title)} | Package: ${safe(vuln.pkg)} v${safe(vuln.version)}` : 'None';\nconst tgVuln  = vuln.cve ? `${vuln.cve} (${safe(vuln.severity)}) | ${safe(vuln.pkg)} v${safe(vuln.version)}` : 'None';\n\n// \u2500\u2500 Syscheck \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst sys    = alert.syscheck || {};\nconst sysStr = sys.path ? `Path: ${sys.path} | Event: ${sys.event} | By: ${safe(sys.modified_by)} | Process: ${safe(sys.process)}` : 'N/A';\nconst tgSys  = sys.path ? `${sys.path} | ${sys.event} | by ${safe(sys.modified_by)}` : 'N/A';\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// NEW v5 \u2014 DEDUP / BURST DETECTION EXTRACTION\n// Reads _dedup object written by C \u2014 Alert Dedup Gate\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst dedup       = _e._dedup || {};\nconst isBurst     = dedup.is_burst_flush  ?? false;\nconst isFirst     = dedup.is_first        ?? true;\nconst attackPat   = dedup.attack_pattern  || null;\nconst burstIPs    = dedup.unique_src_ips  || [];\nconst attemptCnt  = dedup.attempt_count   || 1;\nconst burstRate   = dedup.rate_per_min    || null;\nconst burstDur    = dedup.burst_duration_s|| null;\nconst flushTrig   = dedup.flush_trigger   || null;\n\n// \u2500\u2500 Dedup status label \u2500\u2500\nconst dedupStatus = isBurst\n  ? `\u26a1 BURST FLUSH \u2014 ${attackPat || 'REPEATED_ALERT'}`\n  : isFirst\n    ? `\u2705 FIRST OCCURRENCE`\n    : `\u2139\ufe0f SINGLE EVENT`;\n\n// \u2500\u2500 Email: full dedup section lines \u2500\u2500\n// Shown always \u2014 burst rows only rendered when isBurst=true\nconst dedupEmailSection = [\n  ``,\n  `${'\u2500'.repeat(60)}`,\n  `\ud83d\udd01 DEDUP / BURST DETECTION`,\n  `${'\u2500'.repeat(60)}`,\n  `  Status         : ${dedupStatus}`,\n  isBurst ? `  Attack Pattern  : ${attackPat}` : null,\n  isBurst ? `  Total Attempts  : ${attemptCnt}` : null,\n  isBurst ? `  Rate            : ~${burstRate} attempts/min` : null,\n  isBurst ? `  Burst Duration  : ${burstDur}s` : null,\n  isBurst ? `  Unique Sources  : ${burstIPs.length} IP(s)` : null,\n  isBurst && burstIPs.length > 0\n    ? `  Source IPs      :\\n${burstIPs.map(ip=>`    \u2022 ${ip}`).join('\\n')}`\n    : null,\n  isBurst ? `  Flush Trigger   : ${flushTrig === 'threshold' ? '\ud83d\udd22 Threshold hit' : '\u23f1\ufe0f Time interval'}` : null,\n  ``,\n].filter(l => l !== null);\n\n// \u2500\u2500 Telegram: burst banner (only if burst \u2014 keeps char budget tight) \u2500\u2500\n// Format: 2 lines max, ~200\u2013250 chars total added\nconst tgDedupLines = isBurst\n  ? [\n      ``,\n      `\u26a1 <b>BURST DETECTED</b> | ${attackPat} | ${attemptCnt} attempts | ${burstIPs.length} src IPs | ~${burstRate}/min | ${burstDur}s`,\n      burstIPs.length > 0\n        ? `\ud83c\udf10 Sources: <code>${burstIPs.slice(0,4).join(', ')}${burstIPs.length > 4 ? ` +${burstIPs.length-4} more` : ''}</code>`\n        : null,\n    ].filter(l => l !== null)\n  : [];  // no lines added for first-occurrence or single events \u2014 keeps Telegram clean\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// FULL EMAIL SUMMARY\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst lines = [\n  `${se} SOC ALERT TRIAGE REPORT`,\n  `${'\u2550'.repeat(60)}`,\n  ``,\n  `\ud83d\udccb ALERT IDENTIFICATION`,\n  `  Alert ID    : ${safe(_e.alert_id)}`,\n  `  Generated   : ${safe(alert.timestamp)}`,\n  `  Pipeline    : ${safe(_e.pipeline).toUpperCase()}`,\n  `  Rule ID     : ${safe(alert.rule_id)}`,\n  `  Rule Desc   : ${safe(alert.rule_desc)}`,\n  `  Rule Level  : ${safe(alert.rule_level)}`,\n  `  Groups      : ${(alert.rule_groups||[]).join(', ')||'N/A'}`,\n  `  Fired Times : ${safe(alert.fired_times)} attempts`,\n  `  Log Source  : ${safe(host.location)}`,\n  ``,\n  `\ud83d\udda5\ufe0f HOST CONTEXT`,\n  `  Agent Name  : ${safe(host.agent_name)}`,\n  `  Agent IP    : ${safe(host.agent_ip)}`,\n  `  Agent ID    : ${safe(host.agent_id)}`,\n  `  OS          : ${safe(host.os)}`,\n  `  Environment : ${safe(host.labels?.environment)}`,\n  `  Criticality : ${safe(host.labels?.criticality)}`,\n  `  Geo         : ${safe(host.geo?.city)}, ${safe(host.geo?.country)}`,\n  ``,\n  `\ud83c\udf10 NETWORK CONTEXT`,\n  `  Src IP      : ${safe(net.src_ip)}`,\n  `  Src Port    : ${safe(net.src_port)}`,\n  `  Dst User    : ${safe(net.dst_user)}`,\n  `  Src Country : ${safe(net.src_country)}, ${safe(net.src_city)}`,\n  `  Protocol    : ${safe(net.protocol)}`,\n\n  // \u2500\u2500 v5 INSERT: Dedup/Burst section after Network Context \u2500\u2500\n  ...dedupEmailSection,\n\n  `\ud83d\udcc4 RAW LOG`,\n  `  ${safe(alert.full_log).slice(0,300)}`,\n  alert.cmdline ? `  Cmdline: ${alert.cmdline}` : null,\n  ``,\n  `${'\u2500'.repeat(60)}`,\n  `\ud83e\udd16 AI ANALYSIS \u2014 ${safe(AUDIT?.ai_model)} via ${safe(AUDIT?.ai_provider)}`,\n  `${'\u2500'.repeat(60)}`,\n  ``,\n  `\ud83c\udfaf VERDICT SUMMARY`,\n  `  Verdict     : ${ve}`,\n  `  Confidence  : ${ce}`,\n  `  Severity    : ${safe(ai.incident_severity)}`,\n  `  Risk Score  : ${safe(ai.risk_score)}/100`,\n  `  Attack Type : ${safe(ai.attack_type)}`,\n  `  TI Verdict  : ${te} (Score: ${safe(ti.summary?.score)})`,\n  ``,\n  `\ud83d\udcdd ANALYST BRIEFING`,\n  `  ${safe(ai.analysis)}`,\n  ``,\n  `\ud83e\uddec MITRE ATT&CK`,\n  mitreStr || '  N/A',\n  ``,\n  `${'\u2500'.repeat(60)}`,\n  `\ud83d\udd0d IOC ANALYSIS`,\n  `${'\u2500'.repeat(60)}`,\n  iocLines,\n  ``,\n  `  \ud83d\udce6 Raw IOCs`,\n  arr(iocs.ips)     ? `    IPs     : ${iocs.ips.join(', ')}` : null,\n  arr(iocs.domains) ? `    Domains : ${iocs.domains.join(', ')}` : null,\n  arr(iocs.hashes)  ? `    Hashes  : ${iocs.hashes.join(', ')}` : null,\n  arr(iocs.urls)    ? `    URLs    : ${iocs.urls.join(', ')}` : null,\n  ``,\n  `${'\u2500'.repeat(60)}`,\n  `\ud83d\udee1\ufe0f THREAT INTELLIGENCE`,\n  `${'\u2500'.repeat(60)}`,\n  `  TI Flagged  : ${(ti.summary?.flagged||[]).join(' | ')||'None'}`,\n  `  Engine Health: ${engHealth}`,\n  ``,\n  `  \ud83d\udcca Engine Results`,\n  engineLines,\n  ``,\n  `  \ud83d\udcc8 Reputation Details`,\n  repLines.join('\\n') || '  None available',\n  ``,\n  `${'\u2500'.repeat(60)}`,\n  `\u2699\ufe0f SYSCHECK`,\n  `${'\u2500'.repeat(60)}`,\n  `  ${sysStr}`,\n  ti.hash_rep?.hybrid?.hash_note ? `  \u26a0\ufe0f Hash Mismatch: ${ti.hash_rep.hybrid.hash_note}` : null,\n  ``,\n  `\ud83d\udd13 VULNERABILITY`,\n  `  ${vulnStr}`,\n  ``,\n  `\ud83d\udcdc COMPLIANCE`,\n  compLines || '  None',\n  ``,\n  `${'\u2500'.repeat(60)}`,\n  `\ud83d\udd0e L2 INVESTIGATION`,\n  `${'\u2500'.repeat(60)}`,\n  `  Login Status : ${successDetected ? '\u26a0\ufe0f Possible Successful Login Detected' : '\u274c No Successful Login Observed'}`,\n  `  Attempts     : ${safe(alert.fired_times)} failed attempts`,\n  `  ISP          : ${safe(ti.ip_rep?.abuseipdb?.isp || ti.ip_rep?.virustotal?.asn_owner)}`,\n  `  TOR          : ${safe(ti.ip_rep?.abuseipdb?.is_tor)}`,\n  ``,\n  `  \ud83d\udcc5 Investigation Steps`,\n  timelineLines || '  N/A',\n  ``,\n  `  \ud83c\udfaf Affected Assets`,\n  (arr(ai.affected_assets)||[]).map(a=>`    \u2022 ${a}`).join('\\n') || '  N/A',\n  ``,\n  arr(ai.false_positive_indicators) ? [`  \u2705 False Positive Indicators`, ai.false_positive_indicators.map(f=>`    \u2022 ${f}`).join('\\n')].join('\\n') : null,\n  arr(ai.zero_day_indicators) ? [`  \u26a1 Zero-Day Indicators`, ai.zero_day_indicators.map(z=>`    \u2022 ${z}`).join('\\n')].join('\\n') : null,\n  ai.analyst_notes ? `\\n  \ud83d\uddd2\ufe0f Analyst Notes\\n    ${ai.analyst_notes}` : null,\n  ``,\n  `${'\u2500'.repeat(60)}`,\n  `\ud83d\udee0\ufe0f RECOMMENDED ACTIONS`,\n  `${'\u2500'.repeat(60)}`,\n  actionLines || '  N/A',\n  ``,\n  `\ud83d\udd27 DETECTION IMPROVEMENTS`,\n  improvLines,\n  ``,\n  `${'\u2500'.repeat(60)}`,\n  `\u23f1\ufe0f TIMELINE`,\n  `${'\u2500'.repeat(60)}`,\n  `  Received  : ${safe(tl.received_at)}`,\n  `  TI Done   : ${safe(tl.ti_completed_at)}`,\n  `  AI Done   : ${safe(tl.ai_completed_at)}`,\n  `  Total     : ${duration}`,\n  `  AI Tokens : ${safe(AUDIT?.tokens_used)} | Latency: ${safe(AUDIT?.response_ms)}ms | Model: ${safe(AUDIT?.ai_model)}`,\n  ``,\n  `${'\u2550'.repeat(60)}`,\n  `\ud83c\udd94 ${safe(_e.alert_id)}`,\n  `\ud83d\udcc5 Generated: ${new Date().toUTCString()}`,\n].filter(l => l !== null).join('\\n');\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// TELEGRAM MESSAGE \u2014 Compact\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst tgTI = [];\nif (ti.ip_rep?.abuseipdb) {\n  const a = ti.ip_rep.abuseipdb;\n  tgTI.push(`  AbuseIPDB: Score=${safe(a.score)}% | ISP=${safe(a.isp)} | Reports=${safe(a.reports)} | TOR=${safe(a.is_tor)}`);\n}\nif (ti.ip_rep?.virustotal) {\n  const v = ti.ip_rep.virustotal;\n  tgTI.push(`  VT IP: Mal=${safe(v.malicious)} | Sus=${safe(v.suspicious)} | ASN=${safe(v.asn_owner)}`);\n}\nif (ti.domain_rep?.virustotal) {\n  const v = ti.domain_rep.virustotal;\n  tgTI.push(`  VT Domain: Mal=${safe(v.malicious)} | Sus=${safe(v.suspicious)}`);\n}\nif (ti.domain_rep?.otx) {\n  const o = ti.domain_rep.otx;\n  tgTI.push(`  OTX Domain: Pulses=${safe(o.pulse_count)} | ${trunc((o.malware_families||[]).join(',') || 'No families', 40)}`);\n}\nif (ti.url_rep?.otx) {\n  const o = ti.url_rep.otx;\n  tgTI.push(`  OTX URL: Pulses=${safe(o.pulse_count)} | ${trunc((o.malware_families||[]).join(',') || 'No families', 40)}`);\n}\nif (ti.hash_rep?.virustotal) {\n  const v = ti.hash_rep.virustotal;\n  tgTI.push(`  VT Hash: Mal=${safe(v.malicious)} | ${trunc(safe(v.name), 25)}`);\n}\nif (ti.hash_rep?.hybrid) {\n  const h = ti.hash_rep.hybrid;\n  tgTI.push(`  Hybrid: ${safe(h.verdict)} | Multiscan=${safe(h.multiscan_result)}% | CS=${safe(h.crowdstrike_ml)} | Family=${safe(h.family)}`);\n  if (h.hash_note) tgTI.push(`  \u26a0\ufe0f ${h.hash_note}`);\n}\n\nconst tgActions = (arr(ai.recommended_actions)||[])\n  .map(a => `  ${trunc(a, 150)}`).join('\\n');\n\nconst tgTimeline = (arr(ai.investigation_timeline)||[])\n  .map((s,i) => `  ${i+1}. ${trunc(String(s ?? '').replace(/^Step \\d+ \u2014 /,''), 70)}`).join('\\n');\n\nconst tgIOCs = [\n  arr(iocs.ips)     ? `  IPs: ${iocs.ips.join(', ')}` : null,\n  arr(iocs.domains) ? `  Domains: ${iocs.domains.join(', ')}` : null,\n  arr(iocs.urls)    ? `  URLs: ${trunc(iocs.urls[0], 50)}` : null,\n  `  Verdict: <b>${safe(ai.ioc_analysis?.ioc_verdict,'N/A').toUpperCase()}</b>`\n].filter(Boolean).join('\\n');\n\nconst tg = [\n  `${se} <b>${(_e.severity_tier||'').toUpperCase()}</b> | Rule <code>${safe(alert.rule_id)}</code> | Level ${safe(alert.rule_level)}`,\n  `\ud83c\udd94 <code>${safe(_e.alert_id)}</code>`,\n  `\ud83d\udcc5 ${safe(alert.timestamp)}`,\n  `<b>${safe(alert.rule_desc)}</b>`,\n  ``,\n  `\ud83d\udda5 <b>Host:</b> <code>${safe(host.agent_name)}</code> (${safe(host.agent_ip)}) | Env: ${safe(host.labels?.environment)} | Crit: ${safe(host.labels?.criticality)}`,\n  `\ud83c\udf10 <b>Src:</b> <code>${safe(net.src_ip)}</code>:${safe(net.src_port)} \u2192 User: <b>${safe(net.dst_user)}</b>`,\n  `\ud83d\udccd ${safe(net.src_country)}, ${safe(net.src_city)}`,\n\n  // \u2500\u2500 v5 INSERT: Burst banner \u2014 only rendered when isBurst=true (~200\u2013250 chars max) \u2500\u2500\n  ...tgDedupLines,\n\n  ``,\n  `${ve} | Risk: <b>${safe(ai.risk_score)}/100</b> | ${ce}`,\n  `\ud83d\udee1 TI: ${te} | Score: ${safe(ti.summary?.score)} | ${tgEngHealth}`,\n  `\u2694\ufe0f <b>Attack:</b> ${safe(ai.attack_type)}`,\n  `\ud83d\udd01 Fired: ${safe(alert.fired_times)}x | Login: ${successDetected ? '\u26a0\ufe0f Possible Success' : '\u274c No Success'}`,\n  ``,\n  `\ud83d\udcdd <b>Analysis:</b>`,\n  `  ${trunc(safe(ai.analysis), 280)}`,\n  ``,\n  `\ud83e\uddec <b>MITRE:</b> ${(mitre.techniques||[]).join(', ')||'N/A'} | ${(mitre.tactics||[]).join(', ')||'N/A'}`,\n  arr(mitre.sub_techniques) ? `   Sub: ${mitre.sub_techniques.join(', ')}` : null,\n  ``,\n  `\ud83d\udd0d <b>IOCs:</b>`,\n  tgIOCs,\n  ``,\n  `\ud83d\udee1 <b>TI Detail:</b>`,\n  tgTI.join('\\n') || '  N/A',\n  ``,\n  `\u2699\ufe0f <b>Syscheck:</b> ${tgSys}`,\n  `\ud83d\udd13 <b>Vuln:</b> ${tgVuln}`,\n  `\ud83d\udcdc <b>Compliance:</b> ${tgComp}`,\n  ``,\n  `\ud83d\udee0 <b>Recommended Actions:</b>`,\n  tgActions || '  N/A',\n  ``,\n  `\ud83d\udd0e <b>Investigation Steps:</b>`,\n  tgTimeline || '  N/A',\n  ``,\n  `\ud83c\udfaf <b>Assets:</b> ${(arr(ai.affected_assets)||[]).join(', ')||'N/A'}`,\n  ai.analyst_notes ? `\ud83d\uddd2 <b>Notes:</b> ${trunc(ai.analyst_notes, 150)}` : null,\n  ``,\n  `\u23f1 Total: ${duration} | Tokens: ${safe(AUDIT?.tokens_used)} | Model: ${safe(AUDIT?.ai_model)}`,\n].filter(l => l !== null).join('\\n');\n\n// Safety trim\nconst finalTg = tg.length > 4000 ? tg.slice(0, 3990) + '\\n...' : tg;\n\n// Email Subject \u2014 v5: prefix [BURST] when applicable\nconst burstPrefix = isBurst ? `[BURST:${attackPat}] ` : '';\nconst subject = `${burstPrefix}[${(_e.severity_tier||'').toUpperCase()}][${ai.alert_verdict||'N/A'}][Risk:${ai.risk_score||0}] ${safe(ai.attack_type)} \u2014 ${safe(host.agent_name)} \u2014 ${safe(net.src_ip)}`;\n\nreturn [{\n  json: {\n    summary:      lines,\n    tgMessage:    finalTg,\n    emailSubject: subject,\n    tgCharCount:  finalTg.length,\n    _e,       // \u2190 ADD THIS\n    AUDIT     // \u2190 ADD THIS\n  }\n}];"
+      },
+      "id": "fc4cf872-7249-4c48-a8d1-28740094f579",
+      "name": "C \u2014 SOC Alert Summarizer2",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        128,
+        1152
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "url": "=https://otx.alienvault.com/api/v1/indicators/{{ \n  $('C \u2014 Extract IOCs').first().json._e.iocs.urls[0] \n    ? 'url/' + encodeURIComponent($('C \u2014 Extract IOCs').first().json._e.iocs.urls[0]) \n    : $('C \u2014 Extract IOCs').first().json._e.iocs.domains[0]\n      ? 'domain/' + $('C \u2014 Extract IOCs').first().json._e.iocs.domains[0]\n      : 'domain/invalid.localhost'\n}}/general",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "alienVaultApi",
+        "options": {
+          "timeout": 8000
+        }
+      },
+      "id": "541c1abe-0de5-4227-bfb7-8440628d222b",
+      "name": "C \u2014 TI OTX",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -1424,
+        1216
+      ],
+      "typeVersion": 4.2,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const r=$input.item.json;\nreturn [{json:{engine:'OTX',ok:!r.error&&r.indicator!==undefined,rate_limited:r.statusCode===429,data:r}}];\n"
+      },
+      "id": "dda0628a-21d6-42ff-87d3-034a41a1d281",
+      "name": "C \u2014 Label OTX",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -1248,
+        1216
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $input.item.json;\n\n// n8n unwraps array \u2014 r is the first result object directly\n// Check if it's a valid result by looking for sha256 field\nconst isError   = r.error !== undefined;\nconst isResult  = r.sha256 !== undefined && !isError;\nconst notFound  = !isResult && !isError;\n\nreturn [{ json: {\n  engine:       'HybridAnalysis',\n  ok:           isResult,\n  not_found:    notFound,\n  rate_limited: false,\n  status_code:  200,\n  data: isResult ? [{\n    verdict:        r.verdict                || null,\n    threat_score:   r.threat_score           ?? null,\n    multiscan_result: r.multiscan_result     ?? null,\n    vx_family:      r.vx_family             || null,\n    type:           r.type                  || null,\n    type_short:     r.type_short            || [],\n    size:           r.size                  ?? null,\n    sha256:         r.sha256                || null,\n    md5:            r.md5                   || null,\n    tags:           r.tags                  || [],\n    whitelisted:    r.whitelisted           ?? false,\n    submit_name:    r.last_file_name        || null,\n    submitted_at:   r.submitted_at          || null,\n    crowdstrike_ml: r.scanners_v2?.crowdstrike_ml?.status || null,\n    metadefender:   r.scanners_v2?.metadefender\n      ? `${r.scanners_v2.metadefender.positives}/${r.scanners_v2.metadefender.total} (${r.scanners_v2.metadefender.percent}%)`\n      : null\n  }] : []\n}}];"
+      },
+      "id": "b68f0ef7-c56b-4bc3-8c5a-858acfe3969d",
+      "name": "C \u2014 Label Hybrid",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -1248,
+        1600
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "url": "=https://www.hybrid-analysis.com/api/v2//overview/{{ $json._e.iocs.hashes }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hybridAnalysisApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "fc6110d0-98f9-432a-b2a7-b8cd3214dc21",
+      "name": "C \u2014 TI Hybrid Analysis1",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -1424,
+        1600
+      ],
+      "typeVersion": 4.2,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// C \u2014 AGGREGATE TI \u2014 Dynamic v3\n// Handles: AbuseIPDB, VT_IP, OTX, VT_Hash, HybridAnalysis\n// + Ready slots for: MalwareBazaar, VT_Domain, URLhaus\n// Features:\n//   \u2192 Dynamic OTX type routing (url/domain/IPv4/file)\n//   \u2192 Full engine status tracking (ok/error/rate_limited/skipped/no_response)\n//   \u2192 Rebalanced scoring matching AI rules\n//   \u2192 url_rep section added\n//   \u2192 Full Hybrid fields extracted\n//   \u2192 Hash mismatch detection\n//   \u2192 Unknown engine fallback handler\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n\n// \u2500\u2500 1. Restore _e \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst _e   = JSON.parse(JSON.stringify($('C \u2014 Extract IOCs').first().json._e));\nconst items = $input.all();\n\nif (!_e.alert_id) throw new Error('INTEGRITY: alert_id missing \u2014 check Extract IOCs node');\n\n// \u2500\u2500 2. Index all engine results by name \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst byEngine = {};\nitems.forEach(item => {\n  const j = item.json;\n  if (j && j.engine) byEngine[j.engine] = j;\n});\n\n// \u2500\u2500 3. IOC availability flags \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst NO_IP   = !_e.iocs.ips[0];\nconst NO_DOM  = !_e.iocs.domains[0];\nconst NO_URL  = !_e.iocs.urls[0];\nconst NO_HASH = !_e.iocs.hashes[0];\n\n// \u2500\u2500 4. Initialize TI structure \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst ti = {\n  ip_rep:     {},\n  domain_rep: {},\n  url_rep:    {},\n  hash_rep:   {},\n  summary: {\n    score:   0,\n    flagged: [],\n    verdict: 'unknown'\n  },\n  engines: {\n    AbuseIPDB:      NO_IP             ? 'skipped(no_ip)'   : 'no_response',\n    VT_IP:          NO_IP             ? 'skipped(no_ip)'   : 'no_response',\n    VT_Domain:      NO_DOM            ? 'skipped(no_dom)'  : 'no_response',\n    OTX:            (NO_URL && NO_DOM) ? 'skipped(no_url_dom)' : 'no_response',\n    VT_Hash:        NO_HASH           ? 'skipped(no_hash)' : 'no_response',\n    HybridAnalysis: NO_HASH           ? 'skipped(no_hash)' : 'no_response',\n  },\n  engine_detail: {}  // full raw status per engine for debugging\n};\n\n// \u2500\u2500 Helper: safe score add with cap \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst addScore = (pts, reason) => {\n  ti.summary.score = Math.min(100, ti.summary.score + pts);\n  if (reason) ti.summary.flagged.push(reason);\n};\n\n// \u2500\u2500 Helper: mark engine status \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst markEngine = (name, status, detail = null) => {\n  ti.engines[name] = status;\n  if (detail) ti.engine_detail[name] = detail;\n};\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// ENGINE HANDLERS\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n\n// \u2500\u2500 AbuseIPDB \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst ab = byEngine['AbuseIPDB'];\nif (ab) {\n  if (NO_IP) {\n    markEngine('AbuseIPDB', 'skipped(no_ip)');\n  } else if (ab.rate_limited) {\n    markEngine('AbuseIPDB', 'rate_limited_429');\n  } else if (!ab.ok) {\n    markEngine('AbuseIPDB', 'error', ab.data?.error?.message || 'unknown_error');\n  } else {\n    const d  = ab.data?.data || {};\n    const sc = Number(d.abuseConfidenceScore || 0);\n    const isTor = d.isTor || false;\n\n    ti.ip_rep.abuseipdb = {\n      ip:           d.ipAddress,\n      score:        sc,\n      country:      d.countryCode,\n      country_name: d.countryName,\n      isp:          d.isp,\n      domain:       d.domain,\n      usage_type:   d.usageType,\n      reports:      d.totalReports,\n      distinct_users: d.numDistinctUsers,\n      last_reported: d.lastReportedAt,\n      is_tor:       isTor,\n      hostnames:    d.hostnames || [],\n      is_public:    d.isPublic,\n      is_whitelisted: d.isWhitelisted\n    };\n    markEngine('AbuseIPDB', 'ok');\n\n    // Scoring \u2014 Rule 15 from AI prompt\n    if (isTor) {\n      addScore(10, `IP ${d.ipAddress} AbuseIPDB=TOR_EXIT_NODE`);\n    }\n    if (sc > 80) {\n      addScore(10, `IP ${d.ipAddress} AbuseIPDB=${sc}% HIGH_CONFIDENCE`);\n    } else if (sc > 50) {\n      addScore(5,  `IP ${d.ipAddress} AbuseIPDB=${sc}% MEDIUM_CONFIDENCE`);\n    } else if (sc > 20) {\n      addScore(2,  `IP ${d.ipAddress} AbuseIPDB=${sc}% LOW_CONFIDENCE`);\n    }\n    // Note scanme.nmap.org and similar test IPs\n    if ((d.hostnames || []).includes('scanme.nmap.org')) {\n      ti.ip_rep.abuseipdb.note = 'Known test IP \u2014 scanme.nmap.org (Nmap official)';\n    }\n  }\n}\n\n// \u2500\u2500 VT IP \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst vtip = byEngine['VT_IP'];\nif (vtip) {\n  if (NO_IP) {\n    markEngine('VT_IP', 'skipped(no_ip)');\n  } else if (vtip.rate_limited) {\n    markEngine('VT_IP', 'rate_limited_429');\n  } else if (!vtip.ok) {\n    markEngine('VT_IP', 'error', vtip.data?.error?.message || 'connection_failed');\n  } else {\n    const d  = vtip.data?.data || {};\n    const s  = (d.attributes || {}).last_analysis_stats || {};\n    const mal = s.malicious || 0;\n    const sus = s.suspicious || 0;\n\n    ti.ip_rep.virustotal = {\n      ip:         d.id,\n      malicious:  mal,\n      suspicious: sus,\n      harmless:   s.harmless || 0,\n      undetected: s.undetected || 0,\n      country:    d.attributes?.country,\n      asn:        d.attributes?.asn,\n      asn_owner:  d.attributes?.as_owner,\n      network:    d.attributes?.network,\n      reputation: d.attributes?.reputation || 0\n    };\n    markEngine('VT_IP', 'ok');\n\n    // Scoring \u2014 Rule 16 from AI prompt\n    if (mal >= 10) {\n      addScore(15, `IP ${d.id} VT-malicious=${mal} CONFIRMED`);\n    } else if (mal >= 3) {\n      addScore(8,  `IP ${d.id} VT-malicious=${mal} SUSPICIOUS`);\n    } else if (mal >= 1) {\n      addScore(3,  `IP ${d.id} VT-malicious=${mal} LOW_CONFIDENCE`);\n    }\n    if (sus >= 3) {\n      addScore(2, `IP ${d.id} VT-suspicious=${sus}`);\n    }\n  }\n}\n\n// \u2500\u2500 VT Domain \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst vtdom = byEngine['VT_Domain'];\nif (vtdom) {\n  if (NO_DOM) {\n    markEngine('VT_Domain', 'skipped(no_dom)');\n  } else if (vtdom.rate_limited) {\n    markEngine('VT_Domain', 'rate_limited_429');\n  } else if (!vtdom.ok) {\n    markEngine('VT_Domain', 'error', vtdom.data?.error?.message || 'connection_failed');\n  } else {\n    const d  = vtdom.data?.data || {};\n    const s  = (d.attributes || {}).last_analysis_stats || {};\n    const mal = s.malicious || 0;\n\n    ti.domain_rep.virustotal = {\n      domain:     d.id,\n      malicious:  mal,\n      suspicious: s.suspicious || 0,\n      harmless:   s.harmless || 0,\n      categories: d.attributes?.categories || {},\n      reputation: d.attributes?.reputation || 0,\n      registrar:  d.attributes?.registrar || null,\n      created:    d.attributes?.creation_date || null\n    };\n    markEngine('VT_Domain', 'ok');\n\n    if (mal >= 10) {\n      addScore(15, `Domain ${d.id} VT-malicious=${mal} CONFIRMED`);\n    } else if (mal >= 3) {\n      addScore(8,  `Domain ${d.id} VT-malicious=${mal} SUSPICIOUS`);\n    } else if (mal >= 1) {\n      addScore(3,  `Domain ${d.id} VT-malicious=${mal} LOW_CONFIDENCE`);\n    }\n  }\n}\n\n// \u2500\u2500 OTX \u2014 Dynamic type routing \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst otx = byEngine['OTX'];\nif (otx) {\n  const hasTarget = !NO_URL || !NO_DOM;\n  if (!hasTarget) {\n    markEngine('OTX', 'skipped(no_url_dom)');\n  } else if (otx.rate_limited) {\n    markEngine('OTX', 'rate_limited_429');\n  } else if (!otx.ok) {\n    markEngine('OTX', 'error', otx.data?.error?.message || 'connection_failed');\n  } else {\n    const d    = otx.data || {};\n    const type = d.type || 'unknown';  // 'url', 'domain', 'IPv4', 'FileHash-SHA256'\n    const pc   = d.pulse_info?.count || 0;\n    const pulses = (d.pulse_info?.pulses || []).slice(0, 5).map(p => ({\n      name:             p.name,\n      tags:             p.tags || [],\n      malware_families: (p.malware_families || []).map(m => m.display_name),\n      adversary:        p.adversary || null,\n      targeted_countries: p.targeted_countries || [],\n      created:          p.created || null\n    }));\n    const malware_families = d.pulse_info?.related?.alienvault?.malware_families || [];\n    const adversary        = d.pulse_info?.related?.alienvault?.adversary || [];\n\n    const otxData = {\n      indicator:        d.indicator,\n      type,\n      pulse_count:      pc,\n      pulses,\n      malware_families,\n      adversary,\n      whois:            d.whois || null,\n      alexa:            d.alexa || null,\n      validation:       d.validation || [],\n      false_positive:   d.false_positive || []\n    };\n\n    // Route to correct rep bucket based on OTX type\n    if (type === 'url') {\n      ti.url_rep.otx = otxData;\n      markEngine('OTX', 'ok(url)');\n    } else if (type === 'domain' || type === 'hostname') {\n      ti.domain_rep.otx = otxData;\n      markEngine('OTX', 'ok(domain)');\n    } else if (type === 'IPv4' || type === 'IPv6') {\n      ti.ip_rep.otx = otxData;\n      markEngine('OTX', 'ok(ip)');\n    } else if (type === 'FileHash-SHA256' || type === 'FileHash-MD5') {\n      ti.hash_rep.otx = otxData;\n      markEngine('OTX', 'ok(hash)');\n    } else {\n      // Unknown type \u2014 store in url_rep as fallback\n      ti.url_rep.otx = otxData;\n      markEngine('OTX', `ok(unknown_type:${type})`);\n    }\n\n    // Scoring\n    if (pc > 0) {\n      const pts = Math.min(pc * 2, 10);\n      addScore(pts, `OTX ${type}=${d.indicator} pulses=${pc}`);\n    }\n    if (malware_families.length > 0) {\n      addScore(3, `OTX malware_families=${malware_families.join(',')}`);\n    }\n  }\n}\n\n// \u2500\u2500 VT Hash \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst vthash = byEngine['VT_Hash'];\nif (vthash) {\n  if (NO_HASH) {\n    markEngine('VT_Hash', 'skipped(no_hash)');\n  } else if (vthash.rate_limited) {\n    markEngine('VT_Hash', 'rate_limited_429');\n  } else if (!vthash.ok) {\n    markEngine('VT_Hash', 'error', vthash.data?.error?.message || 'connection_failed');\n  } else {\n    const d  = vthash.data?.data || {};\n    const s  = (d.attributes || {}).last_analysis_stats || {};\n    const mal = s.malicious || 0;\n\n    ti.hash_rep.virustotal = {\n      hash:        d.id,\n      malicious:   mal,\n      suspicious:  s.suspicious || 0,\n      harmless:    s.harmless || 0,\n      undetected:  s.undetected || 0,\n      name:        d.attributes?.meaningful_name || null,\n      type:        d.attributes?.type_description || null,\n      size:        d.attributes?.size || null,\n      first_seen:  d.attributes?.first_submission_date || null,\n      last_seen:   d.attributes?.last_submission_date || null,\n      reputation:  d.attributes?.reputation || 0,\n      tags:        d.attributes?.tags || []\n    };\n    markEngine('VT_Hash', 'ok');\n\n    // Scoring \u2014 Rule 16\n    if (mal >= 10) {\n      addScore(20, `Hash ${d.id} VT-malicious=${mal} CONFIRMED_MALWARE`);\n    } else if (mal >= 3) {\n      addScore(10, `Hash ${d.id} VT-malicious=${mal} SUSPICIOUS`);\n    } else if (mal >= 1) {\n      addScore(4,  `Hash ${d.id} VT-malicious=${mal} LOW_CONFIDENCE`);\n    }\n  }\n}\n\n// \u2500\u2500 Hybrid Analysis \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst hyb = byEngine['HybridAnalysis'];\nif (hyb) {\n  if (NO_HASH) {\n    markEngine('HybridAnalysis', 'skipped(no_hash)');\n  } else if (hyb.rate_limited) {\n    markEngine('HybridAnalysis', 'rate_limited_429');\n  } else if (!hyb.ok) {\n    markEngine('HybridAnalysis', 'error', 'no_result_or_not_found');\n  } else {\n    // Hybrid returns array \u2014 get first result\n    const results = Array.isArray(hyb.data) ? hyb.data : [];\n    const first   = results[0] || {};\n\n    if (!first.verdict && !first.sha256) {\n      markEngine('HybridAnalysis', 'ok_no_verdict');\n    } else {\n      // Hash mismatch detection\n      const submittedHash   = _e.iocs.hashes[0] || '';\n      const returnedHash    = (first.sha256 || '').toLowerCase();\n      const hashMatch       = submittedHash.toLowerCase() === returnedHash;\n\n      ti.hash_rep.hybrid = {\n        verdict:          first.verdict || null,\n        threat_score:     first.threat_score ?? null,\n        multiscan_result: first.multiscan_result ?? null,\n        crowdstrike_ml:   first.crowdstrike_ml || null,\n        metadefender:     first.metadefender || null,\n        family:           first.vx_family || null,\n        type:             first.type || null,\n        type_short:       first.type_short || [],\n        size:             first.size ?? null,\n        sha256:           first.sha256 || null,\n        md5:              first.md5 || null,\n        tags:             first.tags || [],\n        whitelisted:      first.whitelisted ?? false,\n        submitted_at:     first.submitted_at || null,\n        hash_match:       hashMatch,\n        hash_note:        !hashMatch && returnedHash\n          ? `Returned hash ${returnedHash.slice(0,16)}... differs from queried ${submittedHash.slice(0,16)}...`\n          : null\n      };\n      markEngine('HybridAnalysis', 'ok');\n\n      // Scoring \u2014 rebalanced\n      if (first.verdict === 'malicious') {\n        addScore(15, `Hash Hybrid=MALICIOUS family=${first.vx_family || 'unknown'}`);\n        if ((first.multiscan_result || 0) > 80) {\n          addScore(5, `Hash Hybrid multiscan=${first.multiscan_result}%`);\n        }\n        if (first.crowdstrike_ml === 'malicious') {\n          addScore(5, 'Hash CrowdStrike=MALICIOUS');\n        }\n        if (!hashMatch && returnedHash) {\n          ti.summary.flagged.push(`Hash mismatch: queried=${submittedHash.slice(0,16)} returned=${returnedHash.slice(0,16)}`);\n        }\n      } else if (first.verdict === 'suspicious') {\n        addScore(8, `Hash Hybrid=SUSPICIOUS family=${first.vx_family || 'unknown'}`);\n      } else if (first.verdict === 'whitelisted') {\n        // Whitelisted \u2014 subtract score\n        ti.summary.score = Math.max(0, ti.summary.score - 5);\n      }\n    }\n  }\n}\n\n// \u2500\u2500 Unknown engines \u2014 dynamic fallback \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst knownEngines = new Set([\n  'AbuseIPDB','VT_IP','VT_Domain','OTX',\n  'VT_Hash','HybridAnalysis','MalwareBazaar','URLhaus'\n]);\nitems.forEach(item => {\n  const name = item.json?.engine;\n  if (name && !knownEngines.has(name)) {\n    // Unknown engine \u2014 store raw in url_rep as generic\n    ti.engines[name] = item.json?.ok ? 'ok(unknown_engine)' : 'error(unknown_engine)';\n    ti.engine_detail[name] = {\n      ok:   item.json?.ok,\n      data: item.json?.data\n    };\n  }\n});\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// FINAL VERDICT SCORING\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst score = ti.summary.score;\n\nif      (score >= 20) ti.summary.verdict = 'malicious';\nelse if (score >= 10) ti.summary.verdict = 'suspicious';\nelse if (score >  0)  ti.summary.verdict = 'low_risk';\nelse                  ti.summary.verdict = 'clean';\n\n// \u2500\u2500 Engine health summary \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst engineStatuses  = Object.values(ti.engines);\nti.summary.engines_ok      = engineStatuses.filter(s => s.startsWith('ok')).length;\nti.summary.engines_error   = engineStatuses.filter(s => s === 'error' || s.includes('failed')).length;\nti.summary.engines_skipped = engineStatuses.filter(s => s.startsWith('skipped')).length;\nti.summary.engines_limited = engineStatuses.filter(s => s.includes('429')).length;\nti.summary.engines_total   = engineStatuses.length;\n\n// \u2500\u2500 Attach to _e \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n_e.threat_intel = ti;\n_e.timeline.ti_completed_at = new Date().toISOString();\n\nreturn [{ json: { _e } }];\n"
+      },
+      "id": "6ad8f6c6-0794-46be-9233-355a0dffa6ab",
+      "name": "C \u2014 Aggregate TI",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -1008,
+        1264
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "content": "## \ud83c\udfd7\ufe0f WAZUH SOC L2\u2014 v9\n\n**Author:** Saif Ahmed Shuvo\n**Version:** v9 | Updated: 2026-04-05\n**Platform:** n8n + Wazuh SIEM\n\n**PIPELINE FLOW:**\n```\nWazuh Alert (POST)\n  \u2192 ACK (200 OK instantly)\n  \u2192 Enrich Alert (normalize _e object)\n  \u2192 Extract IOCs (IPs, domains, URLs, hashes)\n  \u2192 [5 parallel TI engines]\n      AbuseIPDB \u2192 Label\n      VT IP     \u2192 Label\n      OTX       \u2192 Label  (URL or Domain dynamic)\n      VT Hash   \u2192 Label\n      Hybrid    \u2192 Label\n  \u2192 Merge (Append, 5 inputs)\n  \u2192 Aggregate TI (score + verdict)\n  \u2192 AI Investigation (Groq llama-3.3-70b)\n  \u2192 Parse AI + Build AUDIT\n  \u2192 SOC Alert Summarizer\n  \u2192 Telegram Alert\n```\n\n**WEBHOOK:**\nPOST /webhook/wazuh-critical-groups",
+        "height": 548,
+        "width": 500,
+        "color": 4
+      },
+      "id": "0473daa4-5b74-41d4-88a2-296c34fa07a5",
+      "name": "DOC \u2014 Architecture",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2512,
+        64
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## \u2699\ufe0f CREDENTIALS REQUIRED\n\n**Create these in n8n \u2192 Credentials:**\n\n1. `Header Auth account`\n   \u2192 Type: HTTP Header Auth\n   \u2192 Name: Key\n   \u2192 Value: YOUR_ABUSEIPDB_API_KEY\n\n2. `VirusTotal account`\n   \u2192 Type: VirusTotal API\n   \u2192 Value: YOUR_VT_API_KEY\n\n3. `AlienVault account`\n   \u2192 Type: AlienVault OTX API\n   \u2192 Value: YOUR_OTX_API_KEY\n\n4. `Header Auth account 3`\n   \u2192 Type: HTTP Header Auth\n   \u2192 Name: api-key\n   \u2192 Value: YOUR_HYBRID_ANALYSIS_KEY\n\n5. Groq API Key\n   \u2192 In Groq node headers\n   \u2192 Bearer YOUR_GROQ_API_KEY\n   \u2192 Get free at: console.groq.com\n\n6. Telegram Bot Token\n   \u2192 In Telegram node URL\n   \u2192 Get from: @BotFather on Telegram\n\n**n8n Settings:**\nSettings \u2192 Max concurrent executions: 10",
+        "height": 604,
+        "width": 440,
+        "color": 2
+      },
+      "id": "c4181ec6-767d-490a-bece-cbeb00e9d34c",
+      "name": "DOC \u2014 Credentials",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1952,
+        64
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## \ud83d\udd00 MERGE FIX \u2014 v9\n\n**Why Append mode:**\nAll 5 Label nodes connect to Merge port 0.\nMerge (Append) collects all 5 items.\nonError=continueRegularOutput on every TI HTTP\nnode guarantees output even on API failure.\n\n**Aggregate TI reads by engine name field:**\nOrder-independent. Never hangs.\n\n**ENGINE \u2192 MERGE PORT:**\nAll labels \u2192 Port 0 (Append mode)\n\n**OTX Dynamic Routing:**\nIf URL exists \u2192 queries URL type\nIf no URL but domain \u2192 queries domain type\nAggregate TI auto-detects OTX type field\nand routes to url_rep or domain_rep bucket.",
+        "height": 420,
+        "width": 400,
+        "color": 3
+      },
+      "id": "9c9b9970-afc4-48e9-8978-73b47d759015",
+      "name": "DOC \u2014 Merge Fix",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1440,
+        64
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## \ud83e\udd16 AI INVESTIGATION \u2014 Groq\n\n**Model:** llama-3.3-70b-versatile\n**Provider:** Groq (free tier)\n**Endpoint:** api.groq.com/openai/v1/chat/completions\n\n**Input:** Full _e object including:\n  \u2192 Alert details + MITRE + compliance\n  \u2192 Host context + network\n  \u2192 All TI engine results\n  \u2192 Syscheck + vulnerability\n\n**Output Schema:**\n  \u2192 alert_verdict (TRUE_POSITIVE etc)\n  \u2192 risk_score (0-100)\n  \u2192 mitre_attack (TA00xx, T1xxx format)\n  \u2192 recommended_actions (P0-P3)\n  \u2192 ioc_analysis\n  \u2192 analyst_notes\n  \u2192 investigation_timeline\n\n**Rules:**\n17 strict rules including MITRE ID format,\nrisk score math, FP validation, engine health\nawareness, and correlation engine.",
+        "height": 508,
+        "width": 420,
+        "color": 6
+      },
+      "id": "872bb55f-a347-4c15-841b-4f940056befe",
+      "name": "DOC \u2014 AI Investigation",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -960,
+        64
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## \ud83d\udce4 OUTPUT FORMAT\n\n**Telegram (compact ~2500-3000 chars):**\n  \u2192 Alert ID + Timestamp (header)\n  \u2192 Host + Network context\n  \u2192 Verdict + Risk + Confidence\n  \u2192 TI verdict + Engine health\n  \u2192 Attack type + MITRE\n  \u2192 IOCs + TI detail per engine\n  \u2192 Syscheck + Vuln + Compliance\n  \u2192 All actions P0-P3\n  \u2192 Investigation timeline\n  \u2192 Affected assets + Analyst notes\n  \u2192 Footer (duration, tokens, model)\n\n**Email (full triage report):**\n  \u2192 Complete structured report\n  \u2192 All sections including raw IOCs\n  \u2192 Full engine breakdown\n  \u2192 Detection improvements\n  \u2192 Complete timeline\n\n**Safety:** tgMessage trimmed at 4000 chars\n**tgCharCount field:** shows actual char count",
+        "height": 508,
+        "width": 400,
+        "color": 5
+      },
+      "id": "83d0ebb3-bb69-4665-ba20-697a0d407b85",
+      "name": "DOC \u2014 Output Format",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -480,
+        64
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## \ud83d\udcca TI SCORING LOGIC\n\n**AbuseIPDB:**\n  score > 80  \u2192 +10 (HIGH confidence)\n  score 50-80 \u2192 +5  (MEDIUM)\n  score 20-50 \u2192 +2  (LOW)\n  is_tor=true \u2192 +10 (always)\n  scanme.nmap.org \u2192 noted, not scored\n\n**VT IP / Domain:**\n  malicious >= 10 \u2192 +15 (CONFIRMED)\n  malicious 3-9  \u2192 +8  (SUSPICIOUS)\n  malicious 1-2  \u2192 +3  (LOW)\n\n**VT Hash:**\n  malicious >= 10 \u2192 +20 (CONFIRMED)\n  malicious 3-9  \u2192 +10 (SUSPICIOUS)\n  malicious 1-2  \u2192 +4  (LOW)\n\n**OTX:**\n  pulse_count > 0 \u2192 min(count\u00d72, 10)\n  malware_families \u2192 +3\n\n**Hybrid Analysis:**\n  malicious verdict \u2192 +15\n  multiscan > 80%  \u2192 +5\n  crowdstrike=mal  \u2192 +5\n  suspicious       \u2192 +8\n  whitelisted      \u2192 -5\n\n**VERDICT:**\n  score >= 20 \u2192 malicious\n  score >= 10 \u2192 suspicious\n  score >  0  \u2192 low_risk\n  score = 0   \u2192 clean",
+        "height": 700,
+        "width": 420,
+        "color": 7
+      },
+      "id": "cd0b8348-4084-4b95-ae48-eaac4443a40a",
+      "name": "DOC \u2014 TI Scoring",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        0,
+        0
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -704,
+        1216
+      ],
+      "id": "9a5516e4-8900-4b28-af8b-41aa4bd57779",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "d264d2da-1d5c-4339-8763-e0108020fbf6",
+      "name": "Split In Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "position": [
+        -816,
+        832
+      ],
+      "typeVersion": 3
+    },
+    {
+      "parameters": {
+        "amount": 2
+      },
+      "id": "4ca2326c-6fd3-4fd7-b89e-91ed189d0362",
+      "name": "Wait",
+      "type": "n8n-nodes-base.wait",
+      "position": [
+        -512,
+        832
+      ],
+      "typeVersion": 1.1,
+      "webhookId": "wait-batch-groq-001"
+    },
+    {
+      "parameters": {
+        "batchSize": 2,
+        "options": {
+          "reset": false
+        }
+      },
+      "id": "fde3f3a9-6614-4fa6-8c75-3e2044eb0bfa",
+      "name": "Split In Batches1",
+      "type": "n8n-nodes-base.splitInBatches",
+      "position": [
+        -816,
+        1584
+      ],
+      "typeVersion": 3
+    },
+    {
+      "parameters": {
+        "amount": 2
+      },
+      "id": "9024255e-90fa-42b4-9ab1-e36c9fca551f",
+      "name": "Wait1",
+      "type": "n8n-nodes-base.wait",
+      "position": [
+        -320,
+        1568
+      ],
+      "typeVersion": 1.1,
+      "webhookId": "wait-batch-groq-001"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  generationConfig: {\n    temperature: 0,\n    responseMimeType: \"application/json\"\n  },\n  systemInstruction: {\n    parts: [{\n      text: \"You are a SOC L2 AI Security Analyst. Output strictly valid JSON only. Use only provided data.\\n\\n## STEP 0 \u2014 ALERT TYPE CLASSIFICATION (run first, silently)\\nBefore scoring, classify the alert into one primary type:\\n  BEHAVIORAL   \u2192 evidence from process activity, sysmon events, granted_access, command_line, parent/child process chains\\n  NETWORK      \u2192 evidence from src_ip, dst_ip, ports, suricata signatures\\n  FILE         \u2192 evidence from syscheck path/hash changes\\n  AUTH         \u2192 evidence from logon events, privilege escalation\\n  HYBRID       \u2192 multiple types present\\nThis classification controls which scoring PATH is PRIMARY below.\\n\\n## VERDICT RULES\\n- TRUE_POSITIVE | FALSE_POSITIVE | BENIGN | NEEDS_INVESTIGATION\\n- CONFIDENCE: HIGH (3+ strong indicators), MEDIUM (1-2), LOW (weak or ambiguous).\\n\\n## RISK SCORE ALGORITHM (0-100)\\n\\n### PATH A \u2014 IOC / THREAT INTEL (use when TI data is present)\\n1. TI Score: Malicious=+40, Suspicious=+25, Clean=+5\\n2. Behavior: Strong Malicious=+30, Anomaly=+15\\n3. Asset: Critical=+20, Standard=+10\\n4. Technique: Advanced ATT&CK=+10\\n\\n### PATH B \u2014 BEHAVIORAL / ENDPOINT (use when IOC/TI data is absent or skipped)\\n1. granted_access flags:\\n   - 0x1FFFFF (PROCESS_ALL_ACCESS on sensitive target) = +35\\n   - 0x1410 / 0x1010 (read-only memory access) = +15\\n   - any access to lsass.exe / winlogon.exe / sam = +15 additional\\n2. Process chain:\\n   - Known LOLBIN (procdump, mimikatz, rundll32, wmic, certutil, etc.) = +20\\n   - Unsigned or abnormal parent process = +15\\n   - Spawned from Office/browser/script host = +10\\n3. Rule signal:\\n   - rule_level 13-15 = +20 | rule_level 10-12 = +12 | rule_level < 10 = +5\\n4. Sysmon event context:\\n   - EID 10 (ProcessAccess) on protected process = +15\\n   - EID 1 (ProcessCreate) with suspicious cmdline = +10\\n   - EID 3 (NetworkConnect) unexpected process = +10\\n   - EID 11/13 (FileCreate/RegSetValue) sensitive path = +10\\n5. Asset: Critical=+20, Standard=+10\\n\\n### PATH C \u2014 HYBRID (sum both paths, cap at 100)\\n\\nScore tiers: 0-20: INFO | 21-40: LOW | 41-60: MEDIUM | 61-80: HIGH | 81-100: CRITICAL\\n\\n## BEHAVIORAL EVIDENCE PRIORITY\\nWhen sysmon_process fields are populated, treat them as PRIMARY evidence:\\n- full_log       \u2192 parse for SourceImage, TargetImage, GrantedAccess, SourceUser\\n- source_image   \u2192 identify if LOLBIN or trusted-but-abused binary\\n- target_image   \u2192 identify if sensitive process (lsass, sam, winlogon, ntds)\\n- granted_access \u2192 map hex value to access rights meaning\\n- call_trace     \u2192 identify injected or unsigned DLLs\\n- rule_name      \u2192 extract technique_id and technique_name directly\\n- sysmon_event_id \u2192 determine event class and expected context\\nNEVER return empty analysis fields when sysmon_process data is present.\\nIf IOC fields (iocs, threat_intel) are null/empty/skipped, write in ioc_verdict:\\n  'No external IOC data \u2014 verdict based on behavioral and endpoint evidence.'\\nThen reason fully from available sysmon, rule, and full_log fields.\\n\\n## ANALYSIS FORMAT\\nExactly 4 specific short sentences:\\n1. Event/Source/Target \u2014 what happened, which process, which target, what access\\n2. Asset Impact \u2014 what the target process holds, why access is dangerous\\n3. Evidence Chain \u2014 key indicators linking to known technique (cite rule_name, granted_access, MITRE ID)\\n4. Immediate Action \u2014 one concrete containment or investigation step\\n\\n## MITRE: Use IDs ONLY (T1xxx, T1xxx.xxx)\\n\\n## OUTPUT SCHEMA (all fields required, never omit or leave blank without explicit reason):\\n{\\\"alert_summary\\\":\\\"\\\",\\\"attack_type\\\":null,\\\"alert_verdict\\\":\\\"\\\",\\\"confidence\\\":\\\"\\\",\\\"incident_severity\\\":\\\"\\\",\\\"risk_score\\\":0,\\\"mitre_attack\\\":{\\\"tactics\\\":[],\\\"techniques\\\":[],\\\"sub_techniques\\\":[]},\\\"ioc_analysis\\\":{\\\"malicious_ips\\\":[],\\\"malicious_domains\\\":[],\\\"malicious_hashes\\\":[],\\\"suspicious_urls\\\":[],\\\"ioc_verdict\\\":\\\"\\\"},\\\"false_positive_indicators\\\":[],\\\"analysis\\\":\\\"\\\",\\\"investigation_timeline\\\":[],\\\"affected_assets\\\":[],\\\"recommended_actions\\\":[\\\"P0 \u2014 specific action \u2014 specific reason citing alert data\\\",\\\"P1 \u2014 specific action \u2014 specific reason\\\",\\\"P2 \u2014 specific action \u2014 specific reason\\\",\\\"P3 \u2014 specific action \u2014 specific reason\\\"],\\\"detection_improvements\\\":[],\\\"threat_actor_profile\\\":null,\\\"zero_day_indicators\\\":[],\\\"analyst_notes\\\":\\\"\\\"}\"\n    }]\n  },\n  contents: [{\n    role: \"user\",\n    parts: [{\n      text: JSON.stringify({\n        alert_metadata: {\n          alert_id:  $json._e?.alert_id   || null,\n          pipeline:  $json._e?.pipeline   || null,\n          received:  $json._e?.received_at || null,\n          host:      $json._e?.host       || {}\n        },\n        primary_evidence: {\n          full_log:       $json._e?.alert?.full_log          || null,\n          rule_id:        $json._e?.alert?.rule_id           || null,\n          rule_level:     $json._e?.alert?.rule_level        || null,\n          rule_desc:      $json._e?.alert?.rule_desc         || null,\n          rule_groups:    $json._e?.alert?.rule_groups       || [],\n          mitre:          $json._e?.alert?.mitre             || {},\n          sysmon_event_id: $json._e?.sysmon_system?.event_id || null,\n          source_image:   $json._e?.sysmon_process?.source_image   || null,\n          target_image:   $json._e?.sysmon_process?.target_image   || null,\n          granted_access: $json._e?.sysmon_process?.granted_access || null,\n          source_user:    $json._e?.sysmon_process?.source_user    || null,\n          target_user:    $json._e?.sysmon_process?.target_user    || null,\n          call_trace:     $json._e?.sysmon_process?.call_trace     || null,\n          rule_name:      $json._e?.sysmon_process?.rule_name      || null\n        },\n        security_telemetry: {\n          alert_details:        $json._e?.alert              || {},\n          network:              $json._e?.network            || {},\n          iocs:                 $json._e?.iocs               || {},\n          threat_intel_summary: $json._e?.threat_intel?.summary || {},\n          reputation: {\n            ip:     $json._e?.threat_intel?.ip_rep     || {},\n            domain: $json._e?.threat_intel?.domain_rep || {},\n            url:    $json._e?.threat_intel?.url_rep    || {},\n            hash:   $json._e?.threat_intel?.hash_rep   || {}\n          },\n          syscheck:       $json._e?.syscheck       || {},\n          vulnerability:  $json._e?.vulnerability  || {},\n          sysmon_process: $json._e?.sysmon_process  || {},\n          sysmon_network: $json._e?.sysmon_network  || {},\n          suricata:       $json._e?.suricata        || {}\n        }\n      })\n    }]\n  }]\n}) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "342811ed-f05b-4948-88db-c868d10e9b6e",
+      "name": "AI Investigation gemini-2.5-flash",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -464,
+        1568
+      ],
+      "typeVersion": 4.2,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "AmMmRWVhbpzEGavm",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ { \"_e\": $json._e } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -624,
+        1568
+      ],
+      "id": "9339048c-11ea-472d-b6d0-ddcfcf719a2a",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Capture all incoming items from the previous node\nconst items = $input.all();\n\n// 2. Logic: Pick the 2nd item (index 1) if it exists, otherwise fallback to the 1st\n// This prevents the code from crashing if the AI only sends one result.\nlet targetItem = items.length >= 2 ? items[1].json : items[0].json;\n\n/**\n * 3. THE FIX FOR REPETITION:\n * We return an array with exactly ONE element. \n * Even if 100 items came in, only 1 item goes out.\n */\nreturn [{\n  json: {\n    ...targetItem,\n    // Add a unique execution ID or timestamp for your SOC audit logs\n    extraction_timestamp: new Date().toISOString(),\n    item_count_received: items.length\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        1424
+      ],
+      "id": "2b9c68d3-8b42-43ea-8a0a-7fdbad5e8785",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// PARSE AI + BUILD AUDIT \u2014 Gemini Optimized\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n\n// 1. Restore _e from the TI node\nconst _e = JSON.parse(JSON.stringify($('C \u2014 Aggregate TI').first().json._e));\n\n// 2. Direct Access (since we deduplicated)\nconst item = $input.first().json;\nconst rawText = item?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\n\n// 3. Clean and Strip Markdown\nlet raw = rawText.replace(/^```json\\s*/i, '').replace(/^```\\s*/i, '').replace(/\\s*```$/i, '').trim();\n\n// 4. Parse AI JSON\nlet ai = {};\ntry {\n  ai = JSON.parse(raw);\n} catch (e) {\n  ai = {\n    alert_summary: `[PARSE ERROR] Invalid Gemini JSON`,\n    alert_verdict: 'NEEDS_INVESTIGATION',\n    incident_severity: 'HIGH',\n    risk_score: 50,\n    analysis: `Failed to parse. Raw snippet: ${raw.slice(0, 150)}`,\n    recommended_actions: ['P0 \u2014 Manual review required']\n  };\n}\n\n// 5. Enrichment & Tiering\n_e.ai_analysis = ai;\n_e.timeline.ai_completed_at = new Date().toISOString();\n\nconst lvl = _e.alert.rule_level || 0;\nlet tier = 'low';\nif      (lvl >= 12) tier = 'critical';\nelse if (lvl >= 9)  tier = 'high';\nelse if (lvl >= 6)  tier = 'medium';\nif (ai.incident_severity === 'CRITICAL') tier = 'critical';\n\n_e.severity_tier = tier;\n_e.is_malicious  = (_e.threat_intel?.summary?.verdict === 'malicious' || ai.alert_verdict === 'TRUE_POSITIVE');\n\n// 6. Final AUDIT Object (Summarizer-Ready)\nconst AUDIT = {\n  alert_id: _e.alert_id,\n  pipeline: _e.pipeline,\n  host: { ..._e.host },\n  alert: { ..._e.alert },\n  iocs: { ..._e.iocs },\n  threat_intel: {\n    verdict: _e.threat_intel?.summary?.verdict,\n    score: _e.threat_intel?.summary?.score,\n    flagged: _e.threat_intel?.summary?.flagged,\n    engines: _e.threat_intel?.engines\n  },\n  analysis: {\n    verdict:      ai.alert_verdict,\n    confidence:   ai.confidence,\n    severity:     ai.incident_severity,\n    risk_score:   ai.risk_score || 0,\n    attack_type:  ai.attack_type,\n    summary:      ai.alert_summary,\n    detail:       ai.analysis,\n    mitre_mapped: ai.mitre_attack || {},\n    ioc_verdict:  ai.ioc_analysis || {},\n    timeline:     ai.investigation_timeline || [],\n    assets:       ai.affected_assets || [],\n    actions:      ai.recommended_actions || [],\n    improvements: ai.detection_improvements || [],\n    fp_indicators: ai.false_positive_indicators || [],\n    threat_actor: ai.threat_actor_profile || null,\n    zero_day:     ai.zero_day_indicators || [],\n    analyst_notes: ai.analyst_notes || null\n  },\n  response: {\n    severity_tier: tier,\n    is_malicious:  _e.is_malicious\n  },\n  ai_provider: 'Gemini',\n  ai_model:    item.modelVersion || 'gemini-lite',\n  tokens_used: item.usageMetadata?.totalTokenCount || 0,\n  response_ms: Date.now() - new Date(_e.timeline.received_at).getTime(),\n  timeline: {\n    ..._e.timeline,\n    total_ms: Date.now() - new Date(_e.timeline.received_at).getTime()\n  }\n};\n\nreturn [{ json: { _e, AUDIT } }];"
+      },
+      "id": "d7fb7708-ce2a-4481-bd14-0ed018905866",
+      "name": "Parse AI Fallback Response2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        1408
+      ],
+      "notes": "Parses OpenRouter response. References C \u2014 Aggregate TI via .first() for safe upstream access."
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wazuh-critical-groups",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "369933c5-06c2-4e6a-b636-0164ce817a49",
+      "name": "Webhook Critical",
+      "type": "n8n-nodes-base.webhook",
+      "position": [
+        -1680,
+        848
+      ],
+      "typeVersion": 2,
+      "webhookId": "wazuh-critical-v8"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.item.json;\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// BODY UNWRAPPING \u2014 handles all 3 nesting levels n8n can produce:\n//\n//   Level 1 \u2014 Direct raw alert (txt-file / raw Wazuh):\n//     raw = { rule, agent, data, ... }\n//\n//   Level 2 \u2014 Standard webhook POST:\n//     raw = { body: { pipeline, rule_id, alert: {...} }, ... }\n//\n//   Level 3 \u2014 Curl / n8n test mode (double-wrapped):\n//     raw = { body: [ { body: { pipeline, rule_id, alert: {...} } } ] }\n//\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nlet body;\nif (Array.isArray(raw.body)) {\n  // Level 3: body is an array \u2014 unwrap to body[0].body (actual payload)\n  body = raw.body[0]?.body || raw.body[0] || raw;\n} else if (raw.body !== undefined) {\n  // Level 2: standard single-wrapped webhook\n  body = raw.body;\n} else {\n  // Level 1: raw IS the alert object directly\n  body = raw;\n}\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// FORMAT AUTO-DETECTION\n// Webhook format : body has flat pipeline/rule_id/rule_level at root\n// Raw Wazuh format: body IS the alert object (has rule{}, agent{} at root)\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst isWebhookFormat = (\n  body.pipeline   !== undefined ||\n  body.rule_id    !== undefined ||\n  body.rule_level !== undefined\n);\n\n// \u2500\u2500 Safe getter \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst s = (v, d = null) => (v !== undefined && v !== null && v !== '') ? v : d;\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// RESOLVE NESTED BLOCKS \u2014 handle both formats\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nlet rule, agent, data, sys, win, winSys, winEvt, vuln, geo,\n    predecoder, suricataAlert, fullLog;\n\nif (isWebhookFormat) {\n  // \u2500\u2500 WEBHOOK FORMAT \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  const alert  = body.alert || {};\n  rule         = alert.rule  || {};\n  agent        = alert.agent || {};\n  data         = alert.data  || {};\n  // syscheck: prefer alert.syscheck, fallback body.syscheck (raw FIM alerts)\n  sys          = alert.syscheck    || body.syscheck    || {};\n  // GeoLocation: prefer alert.GeoLocation, fallback body.GeoLocation\n  geo          = alert.GeoLocation || body.GeoLocation || {};\n  fullLog      = s(alert.full_log) || s(body.full_log) || '';\n  predecoder   = alert.predecoder  || body.predecoder  || {};\n\n  // Windows event blocks \u2014 support both eventData (capital D) and eventdata (lowercase d)\n  win    = data.win  || {};\n  winSys = win.system    || {};\n  winEvt = win.eventData || win.eventdata || {};\n\n  // Vulnerability block (Apache/Log4Shell style \u2014 inside data)\n  vuln          = data.vulnerability || {};\n  // Suricata IDS nested alert block (data.alert)\n  suricataAlert = data.alert || {};\n\n} else {\n  // \u2500\u2500 RAW WAZUH FORMAT (txt-file / direct Wazuh alert JSON) \u2500\u2500\u2500\u2500\u2500\n  rule          = body.rule   || {};\n  agent         = body.agent  || {};\n  data          = body.data   || {};\n  // syscheck and GeoLocation sit at ROOT level in raw format\n  sys           = body.syscheck    || {};\n  geo           = body.GeoLocation || {};\n  fullLog       = s(body.full_log) || '';\n  predecoder    = body.predecoder  || {};\n\n  // Windows event blocks \u2014 support both casings\n  win    = data.win  || {};\n  winSys = win.system    || {};\n  winEvt = win.eventData || win.eventdata || {};\n\n  // Vulnerability block\n  vuln          = data.vulnerability || {};\n  // Suricata IDS nested alert block\n  suricataAlert = data.alert || {};\n}\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// CORE FIELDS\n// Flat webhook root fields take priority \u2192 nested alert as fallback\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst alertObj  = isWebhookFormat ? (body.alert || {}) : body;\n\nconst level     = Number(s(body.rule_level) ?? s(rule.level,       0));\nconst ruleId    = String(s(body.rule_id)    ?? s(rule.id,    'unknown'));\nconst agentName =        s(body.agent_name) ?? s(agent.name, 'unknown');\nconst agentIp   =        s(body.agent_ip)   ?? s(agent.ip,   'unknown');\nconst agentId   =        s(body.agent_id)   ?? s(agent.id,   'unknown');\nconst location  =        s(body.location)   ?? s(alertObj.location, 'unknown');\nconst timestamp =        s(body.timestamp)  ?? s(alertObj.timestamp, new Date().toISOString());\nconst ruleDesc  =        s(body.rule_desc)  ?? s(rule.description, 'No description');\nconst ruleGroups=        s(body.rule_groups)?? s(rule.groups, []);\nconst managerId =        s(alertObj.manager?.name) || 'unknown';\n\nconst receivedAt = new Date().toISOString();\nconst alert_id   = `crit-${ruleId}-${agentName.replace(/[^a-z0-9]/gi, '-')}-${Date.now()}`;\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// HASH PARSER \u2014 handles \"MD5=aaa,SHA256=bbb,SHA1=ccc\" strings\n// Used for: Sysmon EID1/10/11 hashes field\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst parseHashes = (hashStr) => {\n  if (!hashStr || typeof hashStr !== 'string') return {};\n  const result = {};\n  const pairs  = hashStr.split(',');\n  for (const pair of pairs) {\n    const eq  = pair.indexOf('=');\n    if (eq === -1) continue;\n    const key = pair.slice(0, eq).trim().toLowerCase();\n    const val = pair.slice(eq + 1).trim();\n    if (val) result[key] = val;\n  }\n  return result;\n};\n\nconst rawHashes    = s(winEvt.hashes) || '';\nconst parsedHashes = parseHashes(rawHashes);\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// IOC SEEDS \u2014 comprehensive extraction across all alert types\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n\n// Source IP\nconst src_ip =\n  s(data.srcip)        ||\n  s(data.src_ip)       ||\n  s(winEvt.sourceIp)   ||\n  s(winEvt.ipAddress)  ||\n  null;\n\n// Destination IP (Sysmon EID3 / Suricata)\nconst dst_ip =\n  s(winEvt.destinationIp) ||\n  s(data.dest_ip)          ||\n  null;\n\n// URL seed\nconst url = s(data.url) || null;\n\n// Domain seed\nconst domain =\n  s(data.hostname)                                              ||\n  s(winEvt.destinationHostname)                                 ||\n  (url ? (url.match(/https?:\\/\\/([^/?#]+)/) || [])[1] : null)  ||\n  (() => {\n    // Extract from PS scriptBlockText download cradle\n    const sbt = s(winEvt.scriptBlockText) || '';\n    const m   = sbt.match(/https?:\\/\\/([^/\\s'\"]+)/);\n    return m ? m[1] : null;\n  })()                                                          ||\n  null;\n\n// Hash seeds \u2014 both SHA256 and MD5 extracted separately\nconst hash_sha256 =\n  parsedHashes.sha256 ||\n  s(sys.sha256_after) ||\n  s(data.sha256)      ||\n  null;\n\nconst hash_md5 =\n  parsedHashes.md5  ||\n  s(sys.md5_after)  ||\n  s(data.md5)       ||\n  null;\n\n// Legacy single hash (sha256 preferred)\nconst hash = hash_sha256 || hash_md5 || null;\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// GEO ENRICHMENT\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst geoInfo = {\n  city:    s(geo.city_name),\n  country: s(geo.country_name),\n  lat:     s(geo.location?.lat),\n  lon:     s(geo.location?.lon)\n};\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// COMPLIANCE TAGS\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst compliance = {\n  pci_dss:     s(rule.pci_dss,     []),\n  gdpr:        s(rule.gdpr,        []),\n  hipaa:       s(rule.hipaa,       []),\n  nist_800_53: s(rule.nist_800_53, [])\n};\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// AGENT LABELS\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst agentLabels = {\n  environment: s(agent.labels?.environment),\n  criticality: s(agent.labels?.criticality)\n};\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// SYSMON WINDOWS SYSTEM BLOCK\n// EID, channel, computer, provider, record ID\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst sysmonSystem = {\n  event_id:      s(winSys.eventID),\n  provider_name: s(winSys.providerName),\n  channel:       s(winSys.channel),\n  computer:      s(winSys.computer),\n  record_id:     s(winSys.eventRecordID),\n  severity:      s(winSys.severityValue),\n  utc_time:      s(winSys.systemTime)\n};\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// SYSMON PROCESS BLOCK\n// EID1 (process create), EID8 (CreateRemoteThread),\n// EID10 (process access), EID11 (file create),\n// EID13 (registry), EID4104 (PS script block)\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst sysmonProcess = {\n  // Source / attacker process\n  source_image:        s(winEvt.sourceImage)        || s(winEvt.image)       || null,\n  source_process_id:   s(winEvt.sourceProcessId)    || s(winEvt.processId)   || null,\n  source_process_guid: s(winEvt.sourceProcessGuid)  || s(winEvt.processGuid) || null,\n  source_user:         s(winEvt.sourceUser)          || s(winEvt.user)        || null,\n\n  // Target / victim process\n  target_image:        s(winEvt.targetImage)         || null,\n  target_process_id:   s(winEvt.targetProcessId)     || null,\n  target_process_guid: s(winEvt.targetProcessGuid)   || null,\n  target_user:         s(winEvt.targetUser)          || null,\n\n  // Parent process (EID1)\n  parent_image:        s(winEvt.parentImage)         || null,\n  parent_process_id:   s(winEvt.parentProcessId)     || null,\n  parent_cmdline:      s(winEvt.parentCommandLine)   || null,\n  parent_user:         s(winEvt.parentUser)          || null,\n\n  // Execution context\n  command_line:        s(winEvt.commandLine)         || s(data.command) || null,\n  current_directory:   s(winEvt.currentDirectory)    || null,\n  integrity_level:     s(winEvt.integrityLevel)      || null,\n  logon_id:            s(winEvt.logonId)             || null,\n\n  // Process access (EID10)\n  granted_access:      s(winEvt.grantedAccess)       || null,\n  call_trace:          s(winEvt.callTrace)           || null,\n\n  // Remote thread (EID8)\n  new_thread_id:       s(winEvt.newThreadId)         || null,\n  start_address:       s(winEvt.startAddress)        || null,\n\n  // File create (EID11)\n  target_filename:     s(winEvt.targetFilename)      || null,\n\n  // Registry (EID13)\n  target_object:       s(winEvt.targetObject)        || null,\n  details:             s(winEvt.details)             || null,\n\n  // Hashes \u2014 parsed from \"MD5=x,SHA256=y,SHA1=z\" + individual fields\n  hashes: {\n    raw:    rawHashes    || null,\n    md5:    hash_md5,\n    sha256: hash_sha256,\n    sha1:   parsedHashes.sha1 || null\n  },\n\n  // PowerShell script block (EID4104)\n  script_block_text:   s(winEvt.scriptBlockText)    || null,\n  script_block_id:     s(winEvt.scriptBlockId)      || null,\n\n  // Sysmon rule tag (e.g. \"technique_id=T1003,technique_name=Credential Dumping\")\n  rule_name:           s(winEvt.ruleName)            || null\n};\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// SYSMON NETWORK BLOCK (EID3 \u2014 network connection)\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst sysmonNetwork = {\n  src_ip:        s(winEvt.sourceIp)            || null,\n  src_port:      s(winEvt.sourcePort)          || s(data.srcport)   || null,\n  src_hostname:  s(winEvt.sourceHostname)      || null,\n  dst_ip,\n  dst_port:      s(winEvt.destinationPort)     || s(data.dest_port) || null,\n  dst_hostname:  s(winEvt.destinationHostname) || null,\n  dst_port_name: s(winEvt.destinationPortName) || null,\n  protocol:      s(winEvt.protocol)            || s(data.protocol, 'unknown'),\n  initiated:     s(winEvt.initiated)           || null,\n  process_image: s(winEvt.image)               || null\n};\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// SURICATA IDS BLOCK\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst suricataBlock = {\n  action:       s(suricataAlert.action),\n  signature:    s(suricataAlert.signature),\n  signature_id: s(suricataAlert.signature_id),\n  category:     s(suricataAlert.category),\n  severity:     s(suricataAlert.severity),\n  gid:          s(suricataAlert.gid),\n  rev:          s(suricataAlert.rev),\n  // Suricata network fields (snake_case at data root)\n  src_ip:       s(data.srcip)     || s(data.src_ip)   || null,\n  src_port:     s(data.srcport)   || s(data.src_port) || null,\n  dst_ip:       s(data.dest_ip)   || null,\n  dst_port:     s(data.dest_port) || null,\n  proto:        s(data.proto)     || null,\n  alert_ts:     s(data.timestamp) || null\n};\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// PREDECODER BLOCK (SSH / Linux syslog alerts)\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst predecoderBlock = {\n  program_name: s(predecoder.program_name),\n  hostname:     s(predecoder.hostname),\n  timestamp:    s(predecoder.timestamp)\n};\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// SYSCHECK BLOCK (FIM)\n// Works for both root-level (raw format) and alert.syscheck (webhook)\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst syscheckBlock = {\n  path:               s(sys.path),\n  event:              s(sys.event),\n  mode:               s(sys.mode),\n  sha256_after:       s(sys.sha256_after),\n  sha256_before:      s(sys.sha256_before),\n  md5_after:          s(sys.md5_after),\n  md5_before:         s(sys.md5_before),\n  sha1_after:         s(sys.sha1_after),\n  sha1_before:        s(sys.sha1_before),\n  size_after:         s(sys.size_after),\n  size_before:        s(sys.size_before),\n  uname_after:        s(sys.uname_after),\n  uid_after:          s(sys.uid_after),\n  mtime_after:        s(sys.mtime_after),\n  changed_attributes: s(sys.changed_attributes, []),\n  modified_by:        s(sys.audit?.user?.name),\n  process:            s(sys.audit?.process?.name),\n  process_id:         s(sys.audit?.process?.id)\n};\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// VULNERABILITY BLOCK\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst vulnBlock = {\n  cve:      s(vuln.cve),\n  severity: s(vuln.severity),\n  title:    s(vuln.title),\n  pkg:      s(vuln.package?.name),\n  version:  s(vuln.package?.version)\n};\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// DECODER INFO\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst decoderBlock = {\n  name:   s(alertObj.decoder?.name),\n  parent: s(alertObj.decoder?.parent)\n};\n\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// FINAL OUTPUT\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nreturn [{\n  json: {\n    _e: {\n      alert_id,\n      pipeline:     'critical',\n      input_format: isWebhookFormat ? 'webhook' : 'raw_wazuh',\n      received_at:  receivedAt,\n\n      host: {\n        agent_id:   agentId,\n        agent_name: agentName,\n        agent_ip:   agentIp,\n        manager:    managerId,\n        location,\n        os:         s(agent.os?.name) || null,\n        computer:   s(winSys.computer) || null,\n        labels:     agentLabels,\n        geo:        geoInfo\n      },\n\n      alert: {\n        rule_id:     ruleId,\n        rule_desc:   ruleDesc,\n        rule_level:  level,\n        rule_groups: ruleGroups,\n        fired_times: s(rule.firedtimes, 1),\n        timestamp,\n        decoder:     decoderBlock,\n        mitre: {\n          id:        s(rule.mitre?.id,        []),\n          tactic:    s(rule.mitre?.tactic,    []),\n          technique: s(rule.mitre?.technique, [])\n        },\n        compliance,\n        full_log: fullLog\n      },\n\n      // Sysmon Windows event system metadata\n      sysmon_system: sysmonSystem,\n\n      // Sysmon process telemetry (EID1/8/10/11/13/4104)\n      sysmon_process: sysmonProcess,\n\n      // Sysmon network telemetry (EID3)\n      sysmon_network: sysmonNetwork,\n\n      // Suricata IDS alert\n      suricata: suricataBlock,\n\n      // Syslog predecoder (SSH / Linux)\n      predecoder: predecoderBlock,\n\n      // File Integrity Monitoring\n      syscheck: syscheckBlock,\n\n      // Vulnerability data\n      vulnerability: vulnBlock,\n\n      // Network block (kept for downstream compatibility)\n      network: {\n        src_ip,\n        src_port:     s(data.srcport)              || s(winEvt.sourcePort)      || null,\n        dst_ip,\n        dst_port:     s(winEvt.destinationPort)    || s(data.dest_port)         || null,\n        dst_user:     s(data.dstuser)              || null,\n        dst_hostname: s(winEvt.destinationHostname)|| null,\n        src_country:  s(data.srcip_country)        || s(geo.country_name)       || null,\n        src_city:     s(data.srcip_city)           || s(geo.city_name)          || null,\n        protocol:     s(winEvt.protocol)           || s(data.protocol)          || s(data.proto) || 'unknown'\n      },\n\n      // IOC seeds for downstream threat intel nodes\n      _seeds: {\n        src_ip,\n        dst_ip,\n        domain,\n        url,\n        hash_sha256,\n        hash_md5,\n        hash  // legacy single hash field\n      },\n\n      iocs:          { ips: [], domains: [], urls: [], hashes: [] },\n      threat_intel:  {},\n      ai_analysis:   {},\n      severity_tier: level >= 15 ? 'critical' : level >= 12 ? 'high' : level >= 7 ? 'medium' : 'low',\n      is_malicious:  false,\n\n      timeline: {\n        received_at:     receivedAt,\n        enriched_at:     new Date().toISOString(),\n        ti_completed_at: null,\n        ai_completed_at: null,\n        total_ms:        null\n      }\n    }\n  }\n}];"
+      },
+      "id": "6e7bf175-9857-44d0-9e36-30dd58a3fef1",
+      "name": "Enrich Alert",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -1680,
+        1232
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// C \u2014 Alert Dedup Gate  v2  (Aggregate + Flush)\n//\n// FIRST occurrence  \u2192 forward immediately, register in cache\n// DUPLICATE within TTL window:\n//   - accumulate attempt count + unique source IPs\n//   - if count >= FLUSH_THRESHOLD  \u2192 flush summary NOW\n//   - if time since last flush >= FLUSH_INTERVAL_MS \u2192 flush summary\n//   - otherwise \u2192 drop silently (no downstream load)\n// FLUSH = synthetic enriched alert carrying full burst stats\n//         so AI investigation + Telegram see the brute-force picture\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n\nconst DEDUP_WINDOW_MS    = 5  * 60 * 1000;  // 5-min suppression window\nconst FLUSH_INTERVAL_MS  = 60 * 1000;        // flush summary every 60 s max\nconst FLUSH_THRESHOLD    = 10;               // or immediately after 10 dupes\n\nif (!global.SOC_DEDUP_CACHE) global.SOC_DEDUP_CACHE = {};\nconst cache = global.SOC_DEDUP_CACHE;\nconst now   = Date.now();\n\n// Purge stale entries\nfor (const [key, entry] of Object.entries(cache)) {\n  if (now - entry.first_seen > DEDUP_WINDOW_MS) delete cache[key];\n}\n\nconst _e = JSON.parse(JSON.stringify($input.item.json._e));\n\n// \u2500\u2500 Fingerprint: rule + agent + /24 subnet + rule groups \u2500\u2500\nconst raw_src       = _e?.network?.src_ip || null;\nconst ip_bucket     = raw_src ? raw_src.replace(/\\.(\\d+)$/, '.0') : 'no-src';\nconst rule_id       = _e?.alert?.rule_id   || 'unknown';\nconst rule_desc     = _e?.alert?.rule_desc || 'unknown';\nconst agent         = _e?.host?.agent_name || 'unknown';\nconst groups        = JSON.stringify((_e?.alert?.rule_groups || []).sort());\nconst fingerprint   = `${rule_id}|${agent}|${ip_bucket}|${groups}`;\n\nconst entry = cache[fingerprint];\n\n// \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n// CASE A: FIRST OCCURRENCE \u2014 register + forward\n// \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nif (!entry) {\n  cache[fingerprint] = {\n    first_seen:    now,\n    last_seen:     now,\n    last_flush_at: now,\n    count:         1,           // total attempts seen\n    src_ips:       raw_src ? new Set([raw_src]) : new Set(),\n    rule_id,\n    rule_desc,\n    agent,\n    ip_bucket,\n    fingerprint\n  };\n\n  _e._dedup = {\n    suppressed:     false,\n    is_first:       true,\n    fingerprint,\n    attempt_count:  1,\n    unique_src_ips: raw_src ? [raw_src] : [],\n    window_ms:      DEDUP_WINDOW_MS,\n    reason:         'First occurrence \u2014 forwarded immediately'\n  };\n\n  return [{ json: { _e } }];\n}\n\n// \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n// CASE B: DUPLICATE within TTL window \u2014 accumulate\n// \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nentry.count++;\nentry.last_seen = now;\nif (raw_src) entry.src_ips.add(raw_src);\n\nconst unique_ips    = [...entry.src_ips];\nconst since_flush   = now - entry.last_flush_at;\nconst should_flush  = entry.count >= FLUSH_THRESHOLD || since_flush >= FLUSH_INTERVAL_MS;\n\nif (!should_flush) {\n  // Silent drop \u2014 accumulating, not yet time to flush\n  _e._dedup = {\n    suppressed:     true,\n    is_first:       false,\n    fingerprint,\n    attempt_count:  entry.count,\n    unique_src_ips: unique_ips,\n    window_ms:      DEDUP_WINDOW_MS,\n    next_flush_in_ms: Math.max(0, FLUSH_INTERVAL_MS - since_flush),\n    reason:         `Suppressed duplicate ${entry.count}: rule ${rule_id} on ${agent} \u2014 flush in ${Math.round((FLUSH_INTERVAL_MS - since_flush)/1000)}s or after ${FLUSH_THRESHOLD - entry.count} more hits`\n  };\n  return [];  // drop \u2014 no downstream processing\n}\n\n// \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n// CASE C: FLUSH \u2014 synthesise a burst summary alert\n// that carries full attack stats into investigation\n// \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nentry.last_flush_at = now;\n\n// Determine attack pattern type from rule groups\nconst groupArr = JSON.parse(groups);\nconst isBrute  = groupArr.some(g => /brute.?force|authentication_failure|multiple_failed/i.test(g));\nconst isSpray  = unique_ips.length >= 3;  // 3+ distinct sources = spray\nconst attackPattern = isSpray  ? 'PASSWORD_SPRAY'\n                    : isBrute  ? 'BRUTE_FORCE'\n                    : 'REPEATED_ALERT_BURST';\n\n// Burst duration in seconds\nconst burst_duration_s = Math.round((now - entry.first_seen) / 1000);\nconst rate_per_min     = burst_duration_s > 0\n  ? Math.round((entry.count / burst_duration_s) * 60)\n  : entry.count;\n\n// Build synthetic enriched _e with burst metadata injected into alert\nconst burst_e = JSON.parse(JSON.stringify(_e));\n\n// Override alert fields so AI sees the full burst picture\nburst_e.alert.rule_desc = `[${attackPattern}] ${rule_desc} \u2014 ${entry.count} attempts in ${burst_duration_s}s from ${unique_ips.length} source IP(s)`;\nburst_e.alert.fired_times = entry.count;\nburst_e.alert.full_log = [\n  `BURST SUMMARY | Pattern: ${attackPattern}`,\n  `Target Agent  : ${agent}`,\n  `Rule          : ${rule_id} \u2014 ${rule_desc}`,\n  `Total Attempts: ${entry.count}`,\n  `Rate          : ~${rate_per_min} attempts/min`,\n  `Duration      : ${burst_duration_s}s`,\n  `Unique Sources: ${unique_ips.length}`,\n  `Source IPs    : ${unique_ips.join(', ')}`,\n  `Window Start  : ${new Date(entry.first_seen).toISOString()}`,\n  `Flush Time    : ${new Date(now).toISOString()}`\n].join('\\n');\n\n// Override src_ip with the most active source (first seen)\nburst_e.network.src_ip = unique_ips[0] || raw_src;\n\n// Stamp dedup metadata\nburst_e._dedup = {\n  suppressed:     false,\n  is_first:       false,\n  is_burst_flush: true,\n  attack_pattern: attackPattern,\n  fingerprint,\n  attempt_count:  entry.count,\n  unique_src_ips: unique_ips,\n  burst_duration_s,\n  rate_per_min,\n  window_ms:      DEDUP_WINDOW_MS,\n  flush_trigger:  entry.count >= FLUSH_THRESHOLD ? 'threshold' : 'interval',\n  reason:         `Burst flush: ${attackPattern} \u2014 ${entry.count} attempts, ${unique_ips.length} sources, ${rate_per_min}/min`\n};\n\n// New alert_id to distinguish the burst summary from original\nburst_e.alert_id = `burst-${rule_id}-${agent.replace(/[^a-z0-9]/gi,'-')}-${now}`;\n\nreturn [{ json: { _e: burst_e } }];\n"
+      },
+      "id": "a3e2fe6f-8967-42ee-95ab-547bfbbe3f6c",
+      "name": "Alert Dedup Gate",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -1680,
+        1424
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// SOC E2E LIFECYCLE BENCHMARK v4.1 \u2014 No fs, n8n native file pipeline\n// Session stats computed from global (in-memory, reset on restart)\n// Persistent write handled by downstream Convert to File + ReadWriteFile\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n\nconst now   = Date.now();\nconst item  = $input.item.json;\nconst _e    = item?._e    || {};\nconst AUDIT = item?.AUDIT || {};\n\n// \u2500\u2500 CONFIG \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst CFG = {\n  cost_per_token_usd:  0.0000006,  // \u2190 single configurable rate\n  outlier_threshold_s: 120,        // ai_pipeline > this = QUEUED_ANOMALY\n  max_global_records:  1000        // rolling in-memory cap\n};\n\n// \u2500\u2500 1. TIMESTAMP PIPELINE \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst toMs = (v) => v ? new Date(v).getTime() : null;\n\nconst ms = {\n  origin: toMs(_e.alert?.timestamp        || AUDIT.alert?.timestamp),\n  ingest: toMs(_e.timeline?.received_at   || AUDIT.timeline?.received_at) || now,\n  ti_end: toMs(_e.timeline?.ti_completed_at || AUDIT.timeline?.ti_completed_at),\n  ai_end: toMs(_e.timeline?.ai_completed_at || AUDIT.timeline?.ai_completed_at),\n  egress: now\n};\n\n// \u2500\u2500 2. LATENCY CHAIN \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst net_lag_ms     = ms.origin ? Math.max(0, ms.ingest - ms.origin) : null;\nconst ti_proc_ms     = (ms.ti_end && ms.ingest) ? Math.max(0, ms.ti_end - ms.ingest) : null;\nconst ai_pipeline_ms = (ms.ai_end && ms.ti_end) ? Math.max(0, ms.ai_end - ms.ti_end) : null;\nconst soar_proc_ms   = Math.max(0, ms.egress - ms.ingest);\nconst e2e_total_ms   = ms.origin ? Math.max(0, ms.egress - ms.origin) : soar_proc_ms;\n\n// \u2500\u2500 3. OUTLIER DETECTION \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst ai_pipeline_s = ai_pipeline_ms !== null ? +(ai_pipeline_ms / 1000).toFixed(3) : null;\nconst anomaly_flag  = (ai_pipeline_s !== null && ai_pipeline_s > CFG.outlier_threshold_s)\n  ? 'QUEUED_ANOMALY' : 'NORMAL';\n\n// \u2500\u2500 4. INFORMATION DENSITY \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst raw_size      = JSON.stringify(item).length;\nconst summary_text  = item?.summary || item?.text || '';\nconst summary_size  = summary_text.length;\nconst compression_ratio = summary_size > 0\n  ? parseFloat((raw_size / summary_size).toFixed(2))\n  : null;\n\n// \u2500\u2500 5. COST \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst tokens_used = AUDIT.tokens_used || 0;\nconst cost_usd    = parseFloat((tokens_used * CFG.cost_per_token_usd).toFixed(8));\n\n// \u2500\u2500 6. BUILD RECORD \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst record = {\n  id:          `BM-${now}`,\n  alert_id:    _e.alert_id || AUDIT.alert_id || 'unknown',\n  session_ts:  new Date(now).toISOString(),\n\n  classification: {\n    rule_id:       _e.alert?.rule_id           || AUDIT.alert?.rule_id       || null,\n    rule_level:    _e.alert?.rule_level         || AUDIT.alert?.rule_level    || null,\n    severity_tier: _e.severity_tier             || AUDIT.response?.severity_tier || null,\n    verdict:       AUDIT.analysis?.verdict      || 'PENDING',\n    confidence:    AUDIT.analysis?.confidence   || null,\n    attack_type:   AUDIT.analysis?.attack_type  || null,\n    risk_score:    AUDIT.analysis?.risk_score   ?? null,\n    is_malicious:  _e.is_malicious              ?? AUDIT.response?.is_malicious ?? null\n  },\n\n  timing: {\n    net_ingest_lag_s:  net_lag_ms    !== null ? +(net_lag_ms    / 1000).toFixed(3) : null,\n    ti_processing_s:   ti_proc_ms    !== null ? +(ti_proc_ms    / 1000).toFixed(3) : null,\n    ai_pipeline_s:     ai_pipeline_s,\n    soar_internal_s:   +(soar_proc_ms  / 1000).toFixed(3),\n    e2e_total_s:       +(e2e_total_ms  / 1000).toFixed(3),\n    anomaly_flag:      anomaly_flag\n  },\n\n  ai_perf: {\n    provider:    AUDIT.ai_provider || null,\n    model:       AUDIT.ai_model    || null,\n    tokens_used: tokens_used,\n    cost_usd:    cost_usd,\n    response_ms: AUDIT.response_ms || null\n  },\n\n  ti_coverage: {\n    engines_total:   _e.threat_intel?.summary?.engines_total   || 0,\n    engines_ok:      _e.threat_intel?.summary?.engines_ok      || 0,\n    engines_skipped: _e.threat_intel?.summary?.engines_skipped || 0,\n    engines_error:   _e.threat_intel?.summary?.engines_error   || 0,\n    ti_verdict:      _e.threat_intel?.summary?.verdict         || AUDIT.threat_intel?.verdict || null,\n    ti_score:        _e.threat_intel?.summary?.score           ?? null,\n    ioc_count:       (_e.iocs?.ips?.length     || 0) +\n                     (_e.iocs?.domains?.length || 0) +\n                     (_e.iocs?.hashes?.length  || 0) +\n                     (_e.iocs?.urls?.length    || 0)\n  },\n\n  dedup: {\n    is_first:       _e._dedup?.is_first      ?? true,\n    attempt_count:  _e._dedup?.attempt_count || 1,\n    suppressed:     _e._dedup?.suppressed    ?? false,\n    attack_pattern: _e._dedup?.attack_pattern || null\n  },\n\n  density: {\n    raw_payload_bytes: raw_size,\n    summary_bytes:     summary_size || null,\n    compression_ratio: compression_ratio\n  }\n};\n\n// \u2500\u2500 7. IN-MEMORY SESSION STATS (global \u2014 resets on container restart) \u2500\u2500\u2500\u2500\nif (!global.BENCH_RECORDS) global.BENCH_RECORDS = [];\nglobal.BENCH_RECORDS.push(record);\nif (global.BENCH_RECORDS.length > CFG.max_global_records) {\n  global.BENCH_RECORDS.shift();\n}\n\nconst normalRecs = global.BENCH_RECORDS.filter(r => r.timing.anomaly_flag === 'NORMAL');\n\nconst statOf = (field) => {\n  const vals = normalRecs\n    .map(r => r.timing[field])\n    .filter(v => v !== null && v !== undefined && !isNaN(v));\n  if (vals.length === 0) return { mean: null, stddev: null, p50: null, p95: null, p99: null, n: 0 };\n  const sorted = [...vals].sort((a, b) => a - b);\n  const mean   = vals.reduce((s, v) => s + v, 0) / vals.length;\n  const stddev = Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / vals.length);\n  const pct    = (p) => sorted[Math.min(Math.floor(p * sorted.length), sorted.length - 1)];\n  return {\n    mean:   +mean.toFixed(3),\n    stddev: +stddev.toFixed(3),\n    p50:    +pct(0.50).toFixed(3),\n    p95:    +pct(0.95).toFixed(3),\n    p99:    +pct(0.99).toFixed(3),\n    n:      vals.length\n  };\n};\n\nconst verdictCounts = global.BENCH_RECORDS.reduce((acc, r) => {\n  const v = r.classification.verdict || 'UNKNOWN';\n  acc[v] = (acc[v] || 0) + 1;\n  return acc;\n}, {});\n\nconst anomalyCount = global.BENCH_RECORDS.filter(r => r.timing.anomaly_flag === 'QUEUED_ANOMALY').length;\nconst totalCost    = global.BENCH_RECORDS.reduce((s, r) => s + (r.ai_perf.cost_usd || 0), 0);\nconst totalTokens  = global.BENCH_RECORDS.reduce((s, r) => s + (r.ai_perf.tokens_used || 0), 0);\n\nconst session_stats = {\n  total_alerts:    global.BENCH_RECORDS.length,\n  normal_alerts:   normalRecs.length,\n  anomaly_alerts:  anomalyCount,\n  anomaly_rate_pct: global.BENCH_RECORDS.length > 0\n    ? +((anomalyCount / global.BENCH_RECORDS.length) * 100).toFixed(2) : 0,\n  latency_stats: {\n    net_ingest_lag_s: statOf('net_ingest_lag_s'),\n    ti_processing_s:  statOf('ti_processing_s'),\n    ai_pipeline_s:    statOf('ai_pipeline_s'),\n    soar_internal_s:  statOf('soar_internal_s'),\n    e2e_total_s:      statOf('e2e_total_s')\n  },\n  verdict_distribution: verdictCounts,\n  false_positive_rate_pct: (() => {\n    const total = global.BENCH_RECORDS.length;\n    const fp    = verdictCounts['FALSE_POSITIVE'] || 0;\n    return total > 0 ? +((fp / total) * 100).toFixed(2) : null;\n  })(),\n  cost_summary: {\n    total_tokens_used:  totalTokens,\n    total_cost_usd:     +totalCost.toFixed(6),\n    avg_cost_per_alert: global.BENCH_RECORDS.length > 0\n      ? +(totalCost / global.BENCH_RECORDS.length).toFixed(8) : 0\n  },\n  ti_hit_rate_pct: (() => {\n    const hits = global.BENCH_RECORDS.filter(r => (r.ti_coverage.ioc_count || 0) > 0).length;\n    return global.BENCH_RECORDS.length > 0\n      ? +((hits / global.BENCH_RECORDS.length) * 100).toFixed(2) : null;\n  })(),\n  computed_at: new Date(now).toISOString()\n};\n\n// \u2500\u2500 8. CSV ROW STRING (passed to Convert to File node) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nconst CSV_HEADER = [\n  'id','alert_id','session_ts',\n  'rule_id','rule_level','severity_tier','verdict','confidence','risk_score','is_malicious',\n  'net_ingest_lag_s','ti_processing_s','ai_pipeline_s','soar_internal_s','e2e_total_s','anomaly_flag',\n  'ai_provider','ai_model','tokens_used','cost_usd','response_ms',\n  'engines_total','engines_ok','engines_skipped','engines_error','ti_verdict','ti_score','ioc_count',\n  'is_first','attempt_count','suppressed',\n  'raw_payload_bytes','summary_bytes','compression_ratio'\n].join(',');\n\nconst esc = (v) => {\n  if (v === null || v === undefined) return '';\n  const s = String(v);\n  return s.includes(',') || s.includes('\"') || s.includes('\\n')\n    ? `\"${s.replace(/\"/g, '\"\"')}\"` : s;\n};\n\nconst csvRow = [\n  record.id, record.alert_id, record.session_ts,\n  record.classification.rule_id, record.classification.rule_level,\n  record.classification.severity_tier, record.classification.verdict,\n  record.classification.confidence, record.classification.risk_score,\n  record.classification.is_malicious,\n  record.timing.net_ingest_lag_s, record.timing.ti_processing_s,\n  record.timing.ai_pipeline_s, record.timing.soar_internal_s,\n  record.timing.e2e_total_s, record.timing.anomaly_flag,\n  record.ai_perf.provider, record.ai_perf.model,\n  record.ai_perf.tokens_used, record.ai_perf.cost_usd, record.ai_perf.response_ms,\n  record.ti_coverage.engines_total, record.ti_coverage.engines_ok,\n  record.ti_coverage.engines_skipped, record.ti_coverage.engines_error,\n  record.ti_coverage.ti_verdict, record.ti_coverage.ti_score, record.ti_coverage.ioc_count,\n  record.dedup.is_first, record.dedup.attempt_count, record.dedup.suppressed,\n  record.density.raw_payload_bytes, record.density.summary_bytes,\n  record.density.compression_ratio\n].map(esc).join(',');\n\n// NOTE: Header is only prepended when this is the very first record\nconst csvText = global.BENCH_RECORDS.length === 1\n  ? `${CSV_HEADER}\\n${csvRow}`\n  : csvRow;\n\nreturn [{\n  json: {\n    benchmark_record: record,\n    session_stats,\n    csvText,          // \u2192 fed into Convert to File node\n    telegram_summary:\n      `\ud83d\udcca *Benchmark*\\n` +\n      `E2E: ${record.timing.e2e_total_s}s | AI: ${record.timing.ai_pipeline_s}s ` +\n      `${anomaly_flag === 'QUEUED_ANOMALY' ? '\u26a0\ufe0f ANOMALY' : '\u2705'}\\n` +\n      `Verdict: ${record.classification.verdict} | Risk: ${record.classification.risk_score}\\n` +\n      `Session n=${session_stats.total_alerts} | FP: ${session_stats.false_positive_rate_pct}% | ` +\n      `Cost: $${session_stats.cost_summary.total_cost_usd}`\n  }\n}];"
+      },
+      "id": "42123d3d-f9fd-4c39-b92e-d0b893f7d0cc",
+      "name": "Result benchmarker",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        288,
+        1216
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "csvText",
+        "options": {
+          "fileName": "soc_benchmark.csv"
+        }
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        464,
+        1216
+      ],
+      "id": "63e917da-e273-4add-b6aa-9ba165f750e2",
+      "name": "Convert to csv"
+    },
+    {
+      "parameters": {
+        "content": "## Main   AI    Investigator Block \n",
+        "height": 272,
+        "width": 544,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -880,
+        784
+      ],
+      "typeVersion": 1,
+      "id": "bb4bffb5-3505-47fc-8789-e1a8558d794e",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "1e551010-3754-430e-926d-2f040c7fec0e",
+              "leftValue": "={{ $input.all()[0].json.error ? \"problem\" : \"ok\" }}",
+              "rightValue": "problem",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -576,
+        1216
+      ],
+      "id": "5dd62fc6-4699-4760-bcc3-83978e582679",
+      "name": "If (True when Main AI fail)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n// PARSE AI + BUILD AUDIT \u2014 SOC v2\n// Parses Groq response + restores _e + builds AUDIT record\n// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nconst _e = JSON.parse(JSON.stringify($('C \u2014 Aggregate TI').first().json._e));\n\nlet raw = '{}';\ntry { raw = $input.item.json?.choices?.[0]?.message?.content || '{}'; } catch { raw = '{}'; }\nraw = raw.replace(/^```json\\s*/i,'').replace(/^```\\s*/i,'').replace(/\\s*```$/i,'').trim();\n\nlet ai = {};\ntry {\n  ai = JSON.parse(raw);\n} catch {\n  ai = {\n    alert_summary: `[PARSE ERROR] ${_e.alert.rule_desc}`,\n    attack_type: null,\n    alert_verdict: 'NEEDS_INVESTIGATION',\n    confidence: 'LOW',\n    incident_severity: 'HIGH',\n    risk_score: 50,\n    mitre_attack: { tactics:[], techniques:[], sub_techniques:[] },\n    ioc_analysis: { malicious_ips:[], malicious_domains:[], malicious_hashes:[], suspicious_urls:[], ioc_verdict:'unknown' },\n    false_positive_indicators: [],\n    analysis: `AI parse failed. TI verdict: ${_e.threat_intel?.summary?.verdict}. Score: ${_e.threat_intel?.summary?.score}. Manual review required.`,\n    investigation_timeline: ['Step 1 \u2014 Manual triage required','Step 2 \u2014 Review Groq execution log'],\n    affected_assets: [_e.host.agent_name],\n    recommended_actions: ['P0 \u2014 Manual triage \u2014 AI parse failed'],\n    detection_improvements: [],\n    threat_actor_profile: null,\n    zero_day_indicators: [],\n    analyst_notes: `Raw Groq output (first 300 chars): ${raw.slice(0,300)}`\n  };\n}\n\n_e.ai_analysis = ai;\n_e.timeline.ai_completed_at = new Date().toISOString();\n\nconst lvl = _e.alert.rule_level;\nlet tier = 'low';\nif      (lvl >= 12) tier = 'critical';\nelse if (lvl >= 9)  tier = 'high';\nelse if (lvl >= 6)  tier = 'medium';\nif (ai.incident_severity === 'CRITICAL' && tier !== 'critical') tier = 'critical';\nif (ai.incident_severity === 'HIGH' && tier === 'low') tier = 'medium';\n\n_e.severity_tier = tier;\n_e.is_malicious = _e.threat_intel?.summary?.verdict === 'malicious' || ai.alert_verdict === 'TRUE_POSITIVE';\n\nconst AUDIT = {\n  alert_id:  _e.alert_id,\n  pipeline:  _e.pipeline,\n  host: { ..._e.host },\n  alert: {\n    rule_id:    _e.alert.rule_id,\n    rule_desc:  _e.alert.rule_desc,\n    rule_level: _e.alert.rule_level,\n    timestamp:  _e.alert.timestamp,\n    mitre:      _e.alert.mitre,\n    cmdline:    _e.alert.cmdline\n  },\n  iocs: { ..._e.iocs },\n  threat_intel: {\n    verdict:    _e.threat_intel.summary?.verdict,\n    score:      _e.threat_intel.summary?.score,\n    flagged:    _e.threat_intel.summary?.flagged,\n    engines:    _e.threat_intel.engines,\n    ip_rep:     _e.threat_intel.ip_rep,\n    domain_rep: _e.threat_intel.domain_rep,\n    hash_rep:   _e.threat_intel.hash_rep\n  },\n  analysis: {\n    verdict:       ai.alert_verdict,\n    confidence:    ai.confidence,\n    severity:      ai.incident_severity,\n    risk_score:    ai.risk_score || 0,\n    attack_type:   ai.attack_type,\n    summary:       ai.alert_summary,\n    detail:        ai.analysis,\n    mitre_mapped:  ai.mitre_attack,\n    ioc_verdict:   ai.ioc_analysis,\n    timeline:      ai.investigation_timeline || [],\n    assets:        ai.affected_assets || [],\n    actions:       ai.recommended_actions || [],\n    improvements:  ai.detection_improvements || [],\n    fp_indicators: ai.false_positive_indicators || [],\n    threat_actor:  ai.threat_actor_profile || null,\n    zero_day:      ai.zero_day_indicators || [],\n    analyst_notes: ai.analyst_notes || null\n  },\n  response: {\n    severity_tier: tier,\n    is_malicious:  _e.is_malicious\n  },\n  // After: response: { severity_tier: tier, is_malicious: _e.is_malicious },\ndedup: {\n  is_burst_flush:  _e._dedup?.is_burst_flush  ?? false,\n  is_first:        _e._dedup?.is_first         ?? true,\n  attack_pattern:  _e._dedup?.attack_pattern   || null,\n  attempt_count:   _e._dedup?.attempt_count    || 1,\n  unique_src_ips:  _e._dedup?.unique_src_ips   || [],\n  burst_duration_s:_e._dedup?.burst_duration_s || null,\n  rate_per_min:    _e._dedup?.rate_per_min     || null,\n  flush_trigger:   _e._dedup?.flush_trigger    || null,\n  reason:          _e._dedup?.reason           || null\n},\n  ai_provider: 'Groq',\n  ai_model:    $input.item.json?.model || 'llama-3.3-70b-versatile',\n  tokens_used: $input.item.json?.usage?.total_tokens || 0,\n  response_ms: Math.round(($input.item.json?.usage?.total_time || 0) * 1000),\n  timeline: {\n    ..._e.timeline,\n    total_ms: Date.now() - new Date(_e.timeline.received_at).getTime()\n  }\n};\n\nreturn [{ json: { _e, AUDIT } }];\n"
+      },
+      "id": "e5308ff6-f1ec-408e-b209-7fb035c6a99c",
+      "name": "C \u2014 Parse AI + Build AUDIT_1",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -400,
+        1216
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "content": "## Back Up AI Investigator Block\n",
+        "height": 448,
+        "width": 720,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -880,
+        1376
+      ],
+      "typeVersion": 1,
+      "id": "a7e07e1e-ea58-479f-8aa6-12a82e3e18e8",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## Response && Output\n",
+        "height": 384,
+        "width": 496,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        128,
+        992
+      ],
+      "typeVersion": 1,
+      "id": "b598f7be-aa5d-4add-a309-9a2f1b7c5866",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "## TI Aggregator\n",
+        "height": 544,
+        "width": 192
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1072,
+        896
+      ],
+      "typeVersion": 1,
+      "id": "d190ef38-52be-4df3-b2b4-7445b83f3a80",
+      "name": "Sticky Note9"
+    },
+    {
+      "parameters": {
+        "content": "## Threat Intelligence Enrichment",
+        "height": 1024,
+        "width": 384,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1472,
+        736
+      ],
+      "typeVersion": 1,
+      "id": "5376d9a8-768a-4c3d-9e07-567b359a4d34",
+      "name": "Sticky Note11"
+    },
+    {
+      "parameters": {
+        "content": "## Pre-Processing ",
+        "height": 1024,
+        "width": 320,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1808,
+        736
+      ],
+      "typeVersion": 1,
+      "id": "548d5a82-4c86-4a74-aca6-b9a8d5cef5bf",
+      "name": "Sticky Note12"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "C \u2014 Extract IOCs": {
+      "main": [
+        [
+          {
+            "node": "C \u2014 TI AbuseIPDB",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "C \u2014 TI VT IP",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "C \u2014 TI VT Hash",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "C \u2014 TI OTX",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "C \u2014 TI Hybrid Analysis1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C \u2014 TI AbuseIPDB": {
+      "main": [
+        [
+          {
+            "node": "C \u2014 Label AbuseIPDB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C \u2014 Label AbuseIPDB": {
+      "main": [
+        [
+          {
+            "node": "C \u2014 Merge TI Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C \u2014 TI VT IP": {
+      "main": [
+        [
+          {
+            "node": "C \u2014 Label VT IP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C \u2014 Label VT IP": {
+      "main": [
+        [
+          {
+            "node": "C \u2014 Merge TI Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "C \u2014 TI VT Hash": {
+      "main": [
+        [
+          {
+            "node": "C \u2014 Label VT Hash",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C \u2014 Label VT Hash": {
+      "main": [
+        [
+          {
+            "node": "C \u2014 Merge TI Results",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "C \u2014 Merge TI Results": {
+      "main": [
+        [
+          {
+            "node": "C \u2014 Aggregate TI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C \u2014 ACK Wazuh": {
+      "main": [
+        [
+          {
+            "node": "Enrich Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C \u2014 AI Investigation Groq v2": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C \u2014 SOC Alert Summarizer2": {
+      "main": [
+        [
+          {
+            "node": "Result benchmarker",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "C \u2014 Send Telegram Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C \u2014 TI OTX": {
+      "main": [
+        [
+          {
+            "node": "C \u2014 Label OTX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C \u2014 Label OTX": {
+      "main": [
+        [
+          {
+            "node": "C \u2014 Merge TI Results",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "C \u2014 TI Hybrid Analysis1": {
+      "main": [
+        [
+          {
+            "node": "C \u2014 Label Hybrid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C \u2014 Label Hybrid": {
+      "main": [
+        [
+          {
+            "node": "C \u2014 Merge TI Results",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "C \u2014 Aggregate TI": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "If (True when Main AI fail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split In Batches": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "C \u2014 AI Investigation Groq v2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split In Batches1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Investigation gemini-2.5-flash": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "AI Investigation gemini-2.5-flash",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Fallback Response2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Fallback Response2": {
+      "main": [
+        [
+          {
+            "node": "C \u2014 SOC Alert Summarizer2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Critical": {
+      "main": [
+        [
+          {
+            "node": "C \u2014 ACK Wazuh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich Alert": {
+      "main": [
+        [
+          {
+            "node": "Alert Dedup Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert Dedup Gate": {
+      "main": [
+        [
+          {
+            "node": "C \u2014 Extract IOCs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Result benchmarker": {
+      "main": [
+        [
+          {
+            "node": "Convert to csv",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If (True when Main AI fail)": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "C \u2014 Parse AI + Build AUDIT_1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "C \u2014 Parse AI + Build AUDIT_1": {
+      "main": [
+        [
+          {
+            "node": "C \u2014 SOC Alert Summarizer2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "3ad9141e-8178-41e2-aa87-f62d1086b94e",
+  "meta": {
+    "instanceId": "<YOUR_INSTANCE_ID>"
+  },
+  "id": "YzAH9Iaf4qgYqKub",
+  "tags": []
+}
